@@ -20,7 +20,9 @@ import CustomerArchetypes from './components/CustomerArchetypes';
 import StoreNarrative from './components/StoreNarrative';
 import DetectionConfidenceMonitor from './components/DetectionConfidenceMonitor';
 import OpsCommandCenter from './components/OpsCommandCenter';
-import BrandMerchandisingMap from './components/BrandMerchandisingMap';
+import BrandMerchandisingMap, { BrandAttentionSummary } from './components/BrandMerchandisingMap';
+import WinningFeatureDeck from './components/WinningFeatureDeck';
+import AnalyticsCommandView from './components/AnalyticsCommandView';
 
 const API_BASE = getApiUrl();
 const DEFAULT_STORE = 'STORE_BLR_002';
@@ -62,10 +64,10 @@ const NavIcons = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard',  label: 'Live Dashboard',    description: 'KPIs, funnel, queue, heatmap' },
-  { id: 'analytics',  label: 'Journey Analytics', description: 'Visitor trends and zone behavior' },
+  { id: 'dashboard',  label: 'Live Dashboard',    description: 'Executive pulse and winning features' },
+  { id: 'analytics',  label: 'Journey Analytics', description: 'Pie charts, dwell, risk, outcome graphs' },
   { id: 'cameras',    label: 'Vision Center',     description: 'Camera feeds and overlays' },
-  { id: 'events',     label: 'Live Operations',   description: 'Event stream and active alerts' },
+  { id: 'events',     label: 'Live Operations',   description: 'Event feed, floor map, alerts' },
   { id: 'comparison', label: 'Store Comparison',  description: 'Compare stores side by side' },
 ];
 
@@ -209,6 +211,7 @@ export const App: React.FC = () => {
         title,
       )}
       <FunnelChart stages={funnelData} />
+      <BrandAttentionSummary metrics={activeMetrics} />
     </div>
   );
 
@@ -421,28 +424,16 @@ export const App: React.FC = () => {
               {renderSimulationControls()}
               {renderDashboardShortcuts()}
               {renderKpiGrid()}
-
-              {/* Intelligence Feature Cards */}
-              <div className="feature-grid">
-                <OpportunityRadar radar={activeMetrics.opportunity_radar} />
-                <BeautyBlackHole data={activeMetrics.beauty_black_hole} />
-                <CustomerArchetypes items={activeMetrics.customer_archetypes} />
-              </div>
+              <WinningFeatureDeck metrics={activeMetrics} anomalyCount={anomalies.length} />
 
               <StoreNarrative metrics={activeMetrics} anomalies={anomalies} />
-              <BrandMerchandisingMap metrics={activeMetrics} />
 
               <div className="primary-grid">
                 {renderFunnelPanel()}
                 <div className="stacked-panels">
                   {renderQueuePanel()}
-                  {renderHeatmapPanel()}
+                  <DetectionConfidenceMonitor metrics={activeMetrics} />
                 </div>
-              </div>
-
-              <div className="secondary-grid">
-                {renderTimelinePanel()}
-                <DetectionConfidenceMonitor metrics={activeMetrics} />
               </div>
             </>
           )}
@@ -450,26 +441,24 @@ export const App: React.FC = () => {
           {/* ANALYTICS VIEW */}
           {activeView === 'analytics' && (
             <>
-              {renderKpiGrid()}
-
-              <div className="primary-grid">
+              <AnalyticsCommandView metrics={activeMetrics} history={activeHistory} />
+              <div className="feature-grid">
+                <OpportunityRadar radar={activeMetrics.opportunity_radar} />
+                <BeautyBlackHole data={activeMetrics.beauty_black_hole} />
+                <CustomerArchetypes items={activeMetrics.customer_archetypes} />
+              </div>
+              <div className="analytics-detail-grid">
                 {renderTimelinePanel('Visitor Volume Over Time', false)}
-                {renderFunnelPanel('Conversion Funnel Analysis')}
-              </div>
-
-              <div className="secondary-grid">
                 {renderHeatmapPanel('Zone Traffic Heatmap')}
-                {renderQueuePanel('Checkout Performance')}
+                {renderFunnelPanel('Conversion Funnel Detail')}
               </div>
-
-              <BrandMerchandisingMap metrics={activeMetrics} />
             </>
           )}
 
           {/* ═══════════════════ EVENTS VIEW ═══════════════════ */}
           {activeView === 'events' && (
             <>
-              <div className="primary-grid">
+              <div className="operations-live-grid">
                 <div className="panel-card">
                   {renderPanelTitle(
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -480,6 +469,8 @@ export const App: React.FC = () => {
                   )}
                   <LiveEventTicker apiBase={API_BASE} storeId={selectedStore} />
                 </div>
+
+                <BrandMerchandisingMap metrics={activeMetrics} />
 
                 <OpsCommandCenter
                   metrics={activeMetrics}

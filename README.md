@@ -239,7 +239,8 @@ store-intelligence/
 │   ├── src/
 │   │   ├── App.tsx            # Main React app + routing
 │   │   ├── hooks/useStoreSSE.ts  # SSE hook with exponential backoff reconnect
-│   │   └── components/        # MetricCard, FunnelChart, HeatmapChart, AnomaliesLog, etc.
+│   │   ├── data/brigadeFloorPlan.ts # Brigade Road fixtures + spatial zone model
+│   │   └── components/        # KPI cards, graph suites, floor map, event feed, camera UI
 │   ├── vite.config.ts         # Reads VITE_API_URL for Railway/Vercel
 │   └── vercel.json            # Vercel deployment config
 ├── tests/
@@ -305,26 +306,47 @@ CCTV Clips (MP4)
 
 ---
 
-## Brand-Aware Layout Intelligence
+## Live Spatial Planogram Intelligence
 
 The React dashboard also uses the Brigade Road store layout workbook supplied with the dataset. The workbook embeds the actual floor layout as an image, including brand bays such as EB Korean, The Face Shop, Good Vibes, DermDoc, Minimalist, Aqualogica, Lakme Skin, Maybelline, Faces Canada, Lakme, Colorbar + Sugar, Swiss Beauty, Renee / NY Bae, Alps Goodness, Streax, Accessories, PMU, and the cash counter.
 
-Those placements are surfaced in the **Brand Merchandising Map**, which connects live zone dwell and visit counts back to real brand fixtures. This makes the dashboard explain not only "which zone is hot", but also "which brand wall or bay deserves staff attention."
+Those placements are surfaced in the **Live Spatial Floor Map** inside the **Live Operations** view, next to the CCTV event feed. It is intentionally not on the KPI dashboard: the dashboard stays scan-first, while operations gets the real-time floor-control workflow.
+
+The feature adds:
+
+- A planogram-style map with top and bottom wall fixtures, center makeup/nail islands, cash counter, PMU, queue lane, and entry threshold.
+- Live zone pressure from visit count, dwell, and queue depth.
+- Fixture ranking that translates zone-level attention into brand bay priorities.
+- A next-best-move cue for staff, especially when checkout pressure should override browse-zone assistance.
+- Traffic layer ranking so the event feed can be interpreted spatially, not only chronologically.
 
 ---
 
-## Live Dashboard Features (Part E)
+## React Command Center Layout
 
-The React Command Center at **http://localhost:3000** (or your Vercel URL) shows:
+The React Command Center at **http://localhost:3000** (or your Vercel URL) is split by workflow so screens do not repeat the same content:
 
-- 🔴 **Live connection indicator** — SSE connection status with exponential backoff reconnect
-- 📊 **Real-time KPI cards** — unique visitors, conversion rate, queue depth, abandonment rate — with delta badges showing per-update changes
-- 🧭 **Brand Merchandising Map** — maps live zone attention to actual Brigade Road brand bays from the store layout workbook
-- 🔽 **Conversion funnel SVG chart** — live drop-off percentages at each stage
-- 🌡️ **Zone heatmap** — zone visit frequency with normalised intensity
-- 🚨 **Anomaly log** — colour-coded alerts with `suggested_action` strings
-- 📹 **Camera feed viewer** — browser-native video player for CCTV clips via HTTP range requests
-- ⏱️ **Simulation controls** — start/stop/speed controls to replay events at 1x–10x speed
+- **Live Dashboard**: executive KPI scan, 5 real-time winning feature cards, conversion funnel, brand attention summary, queue, and model confidence.
+- **Journey Analytics**: graph-heavy analysis with traffic mix pie chart, dwell momentum bars, conversion gauge, shopper outcome waterfall, and queue/engagement risk matrix.
+- **Live Operations**: event feed, animated floor map with moving people dots, all-brand attention grid, operations actions, anomalies, and confidence monitoring.
+- **Vision Center**: CCTV playback, YOLO stream controls, and camera telemetry.
+- **Store Comparison**: multi-store performance table and network insight cards.
+
+## Five Winning Real-Time Features
+
+- **Conversion Pulse**: live conversion card with session movement.
+- **Queue Rescue**: queue pressure score that highlights when billing needs intervention.
+- **Zone Magnet**: top live attention zone derived from dwell and visits.
+- **Alert Heat**: active anomaly pressure surfaced as a manager-ready card.
+- **Coverage Live**: number of active shopper zones, useful for seeing whether the floor is evenly covered.
+
+## Visual Analytics Added
+
+- **Traffic Mix Pie**: zone visit share as a pie/donut chart.
+- **Dwell Momentum Bars**: ranked dwell bars for top zones.
+- **Conversion Gauge**: circular gauge with live lift against the current session start.
+- **Risk Matrix**: queue pressure vs engagement plot.
+- **Shopper Outcome Waterfall**: entered, engaged, queued, and lost shopper flow.
 
 Updates appear within **< 100ms** of events hitting `/events/ingest`.
 

@@ -79,12 +79,28 @@ The structured `suggested_action` field per anomaly makes this actionable for st
 There are two visualization frontends provided:
 1. **Built-in HTML/JS Dashboard**: Serves a fast, single-file template directly from the FastAPI server at `/dashboard`. It uses browser-native `EventSource` to receive Server-Sent Events (SSE) updates instantly.
 2. **React + TypeScript Command Center**: A state-of-the-art React + Vite frontend located in the `frontend/` directory, served at `http://localhost:3000`. It features:
-   - Custom **glowing glassmorphism styling** with cyberpunk visual cues.
+   - A lighter **operations console layout** with the KPI dashboard, graph analytics, camera review, and live floor-control workflows separated into distinct screens.
    - Custom **reactive SVG charts** showing vertical conversion funnels and horizontal traffic heatmaps.
    - Dynamic **queue line occupancy telemetry** showing cashier wait points.
    - Real-time **SSE custom hooks** (`useStoreSSE`) with exponential backoff automatic reconnection.
+   - A **Live Spatial Floor Map** in the Live Operations view. The map translates Brigade Road workbook fixtures into top/bottom wall bays, center island fixtures, PMU, queue lane, cash counter, and entry threshold zones.
+   - **Animated people dots, all-brand attention, and next-best staff move** signals derived from live dwell, visit count, queue depth, and conversion context.
+   - A dedicated **Journey Analytics graph suite** with traffic mix pie chart, dwell momentum bars, conversion gauge, shopper outcome waterfall, and queue/engagement risk matrix.
+   - A **5-card winning feature deck** on the dashboard: Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, and Coverage Live.
 
 Both update in under 100ms from when events hit the ingest endpoint.
+
+### Frontend Information Architecture
+
+The frontend intentionally avoids repeated panels across routes:
+
+| View | Role | Primary visuals |
+|------|------|-----------------|
+| Live Dashboard | Executive scan | KPI cards, winning feature deck, funnel, brand attention summary, queue, confidence |
+| Journey Analytics | Analysis workspace | Pie chart, dwell bars, gauge, risk matrix, waterfall, timeline, heatmap |
+| Live Operations | Floor control | Event feed, animated planogram, all-brand attention, anomalies, action center |
+| Vision Center | Camera review | CCTV player, camera thumbnails, YOLO stream telemetry |
+| Store Comparison | Network view | Store table, per-store cards, network insights |
 
 ---
 

@@ -76,16 +76,19 @@ This outline provides a slide-by-slide structure, visual layouts, and detailed s
 ## 🛝 Slide 6: Real-Time React Command Center
 * **Slide Title:** Live React Command Center
 * **Visuals:** A mockup or full-screen screenshot of the **Live React Dashboard** highlighting:
-  - The conversion funnel graph.
-  - The live event ticker/timeline.
+  - The 5-card winning feature deck.
+  - The Journey Analytics graph suite.
+  - The Live Operations floor map with moving people dots.
   - The connection badge indicating 'SSE Live'.
 * **Key Bullet Points:**
-  - **Live Funnel Tracking:** Shows customer drop-off at each stage: Entry -> Zone Visit -> Queue -> Purchase.
+  - **No Duplicate Views:** Dashboard = executive scan, Journey Analytics = graph workspace, Live Operations = floor control.
+  - **5 Winning Features:** Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, and Coverage Live.
+  - **Visual Analytics:** Traffic mix pie, dwell bars, conversion gauge, risk matrix, and shopper outcome waterfall.
   - **Connection Resilience:** Automatically falls back to high-frequency REST polling if the Server-Sent Events (SSE) stream is blocked by a browser firewall.
-  - **Live Feed Timeline:** Displays chronological visitor path histories as they happen.
+  - **Live Floor Map:** Displays animated people dots over the Brigade Road planogram and keeps a compact all-brand attention grid.
 
 > **Voiceover / Speaker Notes:** 
-> *"This is the client dashboard. It is fully responsive and interactive. It displays key telemetry: unique visitor count, live conversion rate, and billing queue depth. We also display a live event ticker showing pathing details. To make it bulletproof in production, the frontend detects if the real-time SSE stream is blocked and automatically falls back to REST API polling, keeping the screen populated."*
+> *"This is the client command center. I split it by store-manager jobs instead of repeating the same widgets. Dashboard gives an executive scan with five live winning features. Journey Analytics is graph-heavy with pie, bars, gauge, risk matrix, and waterfall. Live Operations sits next to the event feed and shows moving people dots on the Brigade Road floor map, so managers can act immediately."*
 
 ---
 

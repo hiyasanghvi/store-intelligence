@@ -99,3 +99,34 @@ The choice of SQLAlchemy as the ORM means this is a one-line change. The schema 
 **What breaks at 40 live stores**: SQLite's single-writer limitation. With 40 stores each sending a batch of events every 30 seconds, you'd have contention on the events table write lock. PostgreSQL with row-level locking and connection pooling (via PgBouncer) would be the right move. I would also add a Redis cache in front of the metric queries (TTL=30s) so 40 concurrent `/metrics` requests don't each hit the DB.
 
 This is exactly the answer I'd give in a follow-up question about scaling.
+
+---
+
+## Decision 4: Split Frontend Views by Job, Not by Reused Widgets
+
+### The Question
+How should the React frontend be reorganized so Dashboard and Journey Analytics do not show nearly the same panels?
+
+### Options Considered
+
+| Option | Pros | Cons |
+|--------|------|------|
+| Reuse KPI/funnel/queue everywhere | Fast and consistent | Makes routes feel copied and wastes screen space |
+| Put everything on Dashboard | Very discoverable | Too dense for executive scanning |
+| Split by manager workflow | Clear mental model, less repetition | Requires more custom visuals |
+
+### What I Chose and Why
+**Split by manager workflow.**
+
+The Dashboard now answers "what is happening right now?" with KPIs and a 5-card winning feature deck. Journey Analytics answers "why is it happening?" with charts: traffic mix pie, dwell bars, conversion gauge, risk matrix, and outcome waterfall. Live Operations answers "what should staff do next?" with the event feed, animated floor map, all-brand attention grid, and action center.
+
+I also separated the Brigade Road planogram data into `frontend/src/data/brigadeFloorPlan.ts` instead of hardcoding every fixture inside the component. That keeps the component focused on live scoring, makes the project structure less copy-like, and makes later workbook-derived layout updates easier.
+
+### Extra Differentiators Added
+- **Conversion Pulse**: live conversion health card.
+- **Queue Rescue**: billing pressure score.
+- **Zone Magnet**: top shopper attention zone.
+- **Alert Heat**: active anomaly pressure.
+- **Coverage Live**: active shopper zone coverage.
+- **Animated Live Spatial Floor Map**: moving people dots over the Brigade Road planogram.
+- **Graph analytics suite**: pie, bars, gauge, risk matrix, and waterfall charts without adding a charting dependency.
