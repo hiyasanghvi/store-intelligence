@@ -1,5 +1,3 @@
-import React from "react";
-
 export default function OpportunityRadar({ radar }: any) {
   if (!radar) return null;
 

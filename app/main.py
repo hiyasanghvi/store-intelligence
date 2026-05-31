@@ -24,7 +24,7 @@ from typing import List, Optional
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db, check_db_health
@@ -42,17 +42,88 @@ from app.heatmap import get_store_heatmap
 from app.dashboard import router as dashboard_router, broadcast_update
 
 # ─── Video config ─────────────────────────────────────────────────────────────
-# Path to the directory containing the CCTV video files
-VIDEO_DIR = Path(os.getenv("VIDEO_DIR", "../CCTV Footage"))
+def resolve_video_dir() -> Path:
+    """Find the CCTV clip directory in local/dev setups."""
+    env_dir = os.getenv("VIDEO_DIR")
+    candidates = [
+        Path(env_dir) if env_dir else None,
+        Path("../CCTV Footage"),
+        Path("../../CCTV Footage"),
+        Path.home() / "Downloads" / "CCTV Footage",
+        Path.home() / "Downloads" / "CCTV Footage-20260529T160731Z-3-00144614ea" / "CCTV Footage",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return candidate.resolve()
+    return Path(env_dir or "../CCTV Footage")
 
-# Mapping of camera IDs (used in URLs) to filenames
-CAMERA_REGISTRY = {
+
+# Path to the directory containing the CCTV video files.
+# Override with VIDEO_DIR when deploying or when clips live elsewhere.
+VIDEO_DIR = resolve_video_dir()
+
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+
+# Mapping of camera IDs (used in URLs) to filenames. These preserve the
+# challenge's original camera labels while still allowing extra recordings.
+DEFAULT_CAMERA_REGISTRY = {
     "CAM_1": "CAM 3.mp4",
     "CAM_2": "CAM 2.mp4",
     "CAM_3": "CAM 1.mp4",
     "CAM_4": "CAM 4.mp4",
     "CAM_5": "CAM 5.mp4",
 }
+
+CAMERA_DISPLAY_OVERRIDES = {
+    "CAM_2": {"description": "Makeup Area", "type": "makeup_area"},
+    "CAM_3": {"description": "Skincare Zone", "type": "skincare"},
+    "CAM_4": {"description": "Back Store / Inventory", "type": "back_store_inventory"},
+}
+
+CAMERA_REGISTRY = DEFAULT_CAMERA_REGISTRY.copy()
+
+
+def _camera_sort_key(path: Path):
+    stem = path.stem.lower()
+    digits = "".join(ch for ch in stem if ch.isdigit())
+    return (0, int(digits)) if digits else (1, stem)
+
+
+def build_camera_registry() -> dict:
+    """Return known challenge cameras plus every video file in VIDEO_DIR."""
+    registry = DEFAULT_CAMERA_REGISTRY.copy()
+    if not VIDEO_DIR.exists():
+        return registry
+
+    registered_files = {filename.lower() for filename in registry.values()}
+    next_idx = len(registry) + 1
+    for video_path in sorted(
+        (p for p in VIDEO_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS),
+        key=_camera_sort_key,
+    ):
+        if video_path.name.lower() in registered_files:
+            continue
+        while f"CAM_{next_idx}" in registry:
+            next_idx += 1
+        registry[f"CAM_{next_idx}"] = video_path.name
+        registered_files.add(video_path.name.lower())
+        next_idx += 1
+    return registry
+
+
+def get_camera_registry() -> dict:
+    global CAMERA_REGISTRY
+    CAMERA_REGISTRY = build_camera_registry()
+    return CAMERA_REGISTRY
+
+
+def apply_camera_display_override(cam_id: str, cam_info: dict) -> dict:
+    override = CAMERA_DISPLAY_OVERRIDES.get(cam_id.upper())
+    if not override:
+        return cam_info
+    merged = dict(cam_info)
+    merged.update(override)
+    return merged
 
 # ─── Logging setup ───────────────────────────────────────────────────────────
 
@@ -181,6 +252,23 @@ class SimulationManager:
         except Exception as e:
             log.warning(f"Failed to sync YOLO stream speed: {e}")
 
+    def _clone_events_for_store(self, events: list[dict], source_store: str, target_store: str) -> list[dict]:
+        """Create a second demo store stream when only one CCTV event set is available."""
+        if any(event.get("store_id") == target_store for event in events):
+            return []
+
+        cloned = []
+        for idx, event in enumerate(events):
+            if event.get("store_id") != source_store:
+                continue
+            clone = dict(event)
+            clone["store_id"] = target_store
+            clone["event_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{target_store}:{event['event_id']}:{idx}"))
+            if clone.get("visitor_id"):
+                clone["visitor_id"] = clone["visitor_id"].replace("VIS_", "VIS_ST1008_", 1)
+            cloned.append(clone)
+        return cloned
+
     async def _run(self):
         # 1. Clear database events
         try:
@@ -221,6 +309,16 @@ class SimulationManager:
         if not events:
             log.error("No events found in events.jsonl")
             return
+
+        st1008_events = self._clone_events_for_store(events, "STORE_BLR_002", "ST1008")
+        if st1008_events:
+            events.extend(st1008_events)
+            log.info(
+                "Added %s ST1008 demo events by remapping STORE_BLR_002 CCTV events. "
+                "This keeps the two-store dashboard populated when the local dataset "
+                "does not include a separate ST1008 detection JSONL.",
+                len(st1008_events),
+            )
 
         events.sort(key=lambda e: e.get("timestamp", ""))
 
@@ -529,29 +627,35 @@ async def root():
 async def list_cameras():
     """List all available camera feeds with their IDs and availability status."""
     cameras = []
-    for cam_id, filename in CAMERA_REGISTRY.items():
+    registry = get_camera_registry()
+    for cam_id, filename in registry.items():
         video_path = VIDEO_DIR / filename
+        cam_info = apply_camera_display_override(cam_id, get_zones_for_cam(cam_id))
         cameras.append({
             "cam_id": cam_id,
-            "name": filename.replace(".mp4", ""),
+            "name": cam_info.get("description") or video_path.stem,
             "filename": filename,
-            "available": True,
+            "type": cam_info.get("type", "recording"),
+            "description": cam_info.get("description", video_path.stem),
+            "zones": cam_info.get("zones", {}),
+            "available": video_path.exists(),
             "stream_url": f"/cameras/stream/{cam_id}",
         })
     return {"cameras": cameras}
 
 
 @app.get("/video/{cam_id}", tags=["video"])
-async def stream_video(cam_id: str, request: Request):
+async def stream_video(cam_id: str):
     """
     HTTP range-request video streaming for browser-native <video> playback.
     Supports seeking, scrubbing, and partial content delivery (206).
     """
-    filename = CAMERA_REGISTRY.get(cam_id.upper())
+    registry = get_camera_registry()
+    filename = registry.get(cam_id.upper())
     if not filename:
         raise HTTPException(
             status_code=404,
-            detail=f"Camera '{cam_id}' not found. Available: {list(CAMERA_REGISTRY.keys())}"
+            detail=f"Camera '{cam_id}' not found. Available: {list(registry.keys())}"
         )
 
     video_path = VIDEO_DIR / filename
@@ -561,47 +665,15 @@ async def stream_video(cam_id: str, request: Request):
             detail=f"Video file '{filename}' not found. Check VIDEO_DIR (current: {VIDEO_DIR})."
         )
 
-    file_size = video_path.stat().st_size
-    range_header = request.headers.get("range")
-    CHUNK = 1024 * 1024  # 1 MB chunks
-
-    if range_header:
-        range_val = range_header.strip().lower().replace("bytes=", "")
-        parts = range_val.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else min(start + CHUNK - 1, file_size - 1)
-        end = min(end, file_size - 1)
-        content_length = end - start + 1
-
-        def iter_range():
-            with open(video_path, "rb") as f:
-                f.seek(start)
-                remaining = content_length
-                while remaining > 0:
-                    data = f.read(min(CHUNK, remaining))
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
-
-        headers = {
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
+    return FileResponse(
+        video_path,
+        media_type="video/mp4",
+        filename=filename,
+        headers={
+            "Cache-Control": "public, max-age=3600",
             "Accept-Ranges": "bytes",
-            "Content-Length": str(content_length),
-        }
-        return StreamingResponse(iter_range(), status_code=206, headers=headers, media_type="video/mp4")
-
-    else:
-        def iter_full():
-            with open(video_path, "rb") as f:
-                while chunk := f.read(CHUNK):
-                    yield chunk
-
-        headers = {
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-        }
-        return StreamingResponse(iter_full(), status_code=200, headers=headers, media_type="video/mp4")
+        },
+    )
 
 
 # ─── YOLO Video Stream endpoints ──────────────────────────────────────────────
@@ -631,24 +703,35 @@ def get_zones_for_cam(cam_id: str) -> dict:
 # Global in-memory telemetry cache
 yolo_stats = {}
 
-async def generate_mjpeg_stream(cam_id: str):
-    import random
+async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
     import numpy as np
     import cv2
     
-    cam_info = get_zones_for_cam(cam_id)
+    cam_info = apply_camera_display_override(cam_id, get_zones_for_cam(cam_id))
     zones = cam_info.get("zones", {})
     entry_line_y = cam_info.get("entry_line_y_ratio")
     cam_type = cam_info.get("type", "unknown")
     
-    video_filename = CAMERA_REGISTRY.get(cam_id.upper())
+    registry = get_camera_registry()
+    video_filename = registry.get(cam_id.upper())
     video_path = VIDEO_DIR / video_filename if video_filename else None
-    cap = None
-    if video_path and video_path.exists():
-        cap = cv2.VideoCapture(str(video_path))
+    def open_capture():
+        if video_path and video_path.exists():
+            opened = cv2.VideoCapture(str(video_path))
+            if opened.isOpened():
+                return opened
+            opened.release()
+        return None
+
+    cap = open_capture()
+    fps_src = cap.get(cv2.CAP_PROP_FPS) if cap else 20.0
+    if not fps_src or fps_src <= 1:
+        fps_src = 20.0
         
     frame_no = 0
-    fps = 20.0
+    fps = min(float(fps_src), 24.0)
+    stream_speed = max(0.25, min(float(speed or 1.0), 10.0))
+    last_frame = None
     
     try:
         while True:
@@ -659,12 +742,28 @@ async def generate_mjpeg_stream(cam_id: str):
             if cap:
                 ret, raw_frame = cap.read()
                 if not ret:
+                    cap.release()
+                    cap = open_capture()
+                    ret, raw_frame = cap.read() if cap else (False, None)
+
+                if not ret and last_frame is not None:
+                    raw_frame = last_frame.copy()
+                    ret = True
+
+                if ret and raw_frame is not None:
+                    last_frame = raw_frame.copy()
+                    frame = cv2.resize(raw_frame, (w, h))
+            elif last_frame is not None:
+                frame = cv2.resize(last_frame, (w, h))
+            else:
+                cap = open_capture()
+                if cap:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, raw_frame = cap.read()
-                
-                if ret:
-                    frame = cv2.resize(raw_frame, (w, h))
-            
+                    if ret and raw_frame is not None:
+                        last_frame = raw_frame.copy()
+                        frame = cv2.resize(raw_frame, (w, h))
+
             if frame is None:
                 # Create slate dark background (BGR) if no video
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -763,19 +862,25 @@ async def generate_mjpeg_stream(cam_id: str):
                 "fps": fps
             }
             
-            _, jpeg = cv2.imencode('.jpg', frame)
+            ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            if not ok:
+                await asyncio.sleep(0.05)
+                continue
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
                    
-            await asyncio.sleep(1 / fps)
+            await asyncio.sleep(1 / (fps * stream_speed))
     except asyncio.CancelledError:
         pass
+    finally:
+        if cap:
+            cap.release()
 
 @app.get("/cameras/stream/{cam_id}", tags=["video"])
-async def stream_camera(cam_id: str):
+async def stream_camera(cam_id: str, speed: float = 1.0):
     """Serve a simulated YOLO real-time stream of the selected camera layout."""
     return StreamingResponse(
-        generate_mjpeg_stream(cam_id),
+        generate_mjpeg_stream(cam_id, speed=speed),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
@@ -795,4 +900,3 @@ if __name__ == "__main__":
         reload=False,
         log_config=None,  # we handle logging ourselves
     )
-

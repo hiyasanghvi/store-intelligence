@@ -18,6 +18,7 @@ Streams at: http://localhost:8001/stream
 """
 
 import argparse
+import os
 import json
 import logging
 import sys
@@ -26,6 +27,10 @@ import threading
 import io
 from pathlib import Path
 from typing import Optional
+
+YOLO_CONFIG_DIR = Path(os.getenv("YOLO_CONFIG_DIR", "data/ultralytics")).resolve()
+YOLO_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["YOLO_CONFIG_DIR"] = str(YOLO_CONFIG_DIR)
 
 import cv2
 import numpy as np
@@ -40,7 +45,22 @@ log = logging.getLogger("detect_stream")
 # ── Config ───────────────────────────────────────────────────────────────────
 
 LAYOUT_PATH = "data/store_layout.json"
-CLIPS_DIR   = "../CCTV Footage"
+
+def resolve_clips_dir() -> str:
+    env_dir = os.getenv("VIDEO_DIR") or os.getenv("CLIPS_DIR")
+    candidates = [
+        Path(env_dir) if env_dir else None,
+        Path("../CCTV Footage"),
+        Path("../../CCTV Footage"),
+        Path.home() / "Downloads" / "CCTV Footage",
+        Path.home() / "Downloads" / "CCTV Footage-20260529T160731Z-3-00144614ea" / "CCTV Footage",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return str(candidate.resolve())
+    return env_dir or "../CCTV Footage"
+
+CLIPS_DIR   = resolve_clips_dir()
 MODEL_PATH  = "yolov8n.pt"
 CONF_THRESH = 0.25
 IOU_THRESH  = 0.45
@@ -75,14 +95,62 @@ def track_color(track_id: int):
 
 # ── Layout helpers ───────────────────────────────────────────────────────────
 
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+
 # Mapping of standard camera IDs to filenames
-CAM_MAP = {
+DEFAULT_CAM_MAP = {
     "CAM_1": "CAM 3.mp4",
     "CAM_2": "CAM 2.mp4",
     "CAM_3": "CAM 1.mp4",
     "CAM_4": "CAM 4.mp4",
     "CAM_5": "CAM 5.mp4",
 }
+CAM_MAP = DEFAULT_CAM_MAP.copy()
+
+CAMERA_DISPLAY_OVERRIDES = {
+    "CAM_2": {"description": "Makeup Area", "type": "makeup_area"},
+    "CAM_3": {"description": "Skincare Zone", "type": "skincare"},
+    "CAM_4": {"description": "Back Store / Inventory", "type": "back_store_inventory"},
+}
+
+def _camera_sort_key(path: Path):
+    stem = path.stem.lower()
+    digits = "".join(ch for ch in stem if ch.isdigit())
+    return (0, int(digits)) if digits else (1, stem)
+
+def build_cam_map():
+    cam_map = DEFAULT_CAM_MAP.copy()
+    clips_dir = Path(CLIPS_DIR)
+    if not clips_dir.exists():
+        return cam_map
+
+    registered_files = {filename.lower() for filename in cam_map.values()}
+    next_idx = len(cam_map) + 1
+    for video_path in sorted(
+        (p for p in clips_dir.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS),
+        key=_camera_sort_key,
+    ):
+        if video_path.name.lower() in registered_files:
+            continue
+        while f"CAM_{next_idx}" in cam_map:
+            next_idx += 1
+        cam_map[f"CAM_{next_idx}"] = video_path.name
+        registered_files.add(video_path.name.lower())
+        next_idx += 1
+    return cam_map
+
+def get_cam_map():
+    global CAM_MAP
+    CAM_MAP = build_cam_map()
+    return CAM_MAP
+
+def apply_camera_display_override(cam_id: str, cam_data: dict) -> dict:
+    override = CAMERA_DISPLAY_OVERRIDES.get(cam_id.upper())
+    if not override:
+        return cam_data
+    merged = dict(cam_data)
+    merged.update(override)
+    return merged
 
 def load_layout():
     with open(LAYOUT_PATH, "r") as f:
@@ -90,12 +158,18 @@ def load_layout():
 
 def get_cam_info(layout: dict, cam_id: str):
     """Find (store_id, cam_data) for a given cam_id (layout ID or standard ID)."""
-    filename = CAM_MAP.get(cam_id.upper())
+    filename = get_cam_map().get(cam_id.upper())
     if filename:
         for store_id, store in layout["stores"].items():
             for cid, cam in store["cameras"].items():
                 if cam["clip_file"] == filename:
-                    return store_id, cam
+                    return store_id, apply_camera_display_override(cam_id, cam)
+        return None, {
+            "clip_file": filename,
+            "type": "recording",
+            "description": Path(filename).stem,
+            "zones": {},
+        }
     
     # Fallback to searching by layout camera ID
     for store_id, store in layout["stores"].items():
@@ -107,19 +181,46 @@ def get_cam_info(layout: dict, cam_id: str):
 def all_cameras(layout: dict):
     cams = []
     # Map layout cameras to standard IDs where possible
-    inv_map = {v: k for k, v in CAM_MAP.items()}
+    cam_map = get_cam_map()
+    inv_map = {v: k for k, v in cam_map.items()}
+    seen_files = set()
     for store_id, store in layout["stores"].items():
         for cid, cam in store["cameras"].items():
             clip = cam["clip_file"]
+            if clip.lower() in seen_files:
+                continue
+            seen_files.add(clip.lower())
             std_id = inv_map.get(clip, cid)
+            display_cam = apply_camera_display_override(std_id, cam)
+            clip_path = Path(CLIPS_DIR) / clip
             cams.append({
                 "cam_id":      std_id,
                 "layout_id":   cid,
                 "store_id":    store_id,
                 "clip_file":   clip,
-                "type":        cam.get("type", "unknown"),
-                "description": cam.get("description", ""),
+                "filename":    clip,
+                "name":        display_cam.get("description") or Path(clip).stem,
+                "available":   clip_path.exists(),
+                "stream_url":  f"/stream?cam={std_id}",
+                "type":        display_cam.get("type", "unknown"),
+                "description": display_cam.get("description", ""),
             })
+    for cam_id, clip in cam_map.items():
+        if clip.lower() in seen_files:
+            continue
+        clip_path = Path(CLIPS_DIR) / clip
+        cams.append({
+            "cam_id":      cam_id,
+            "layout_id":   None,
+            "store_id":    None,
+            "clip_file":   clip,
+            "filename":    clip,
+            "name":        Path(clip).stem,
+            "available":   clip_path.exists(),
+            "stream_url":  f"/stream?cam={cam_id}",
+            "type":        "recording",
+            "description": Path(clip).stem,
+        })
     return cams
 
 

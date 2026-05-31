@@ -17,12 +17,17 @@ import CameraFeed from './components/CameraFeed';
 import OpportunityRadar from './components/OpportunityRadar';
 import BeautyBlackHole from './components/BeautyBlackHole';
 import CustomerArchetypes from './components/CustomerArchetypes';
+import StoreNarrative from './components/StoreNarrative';
+import DetectionConfidenceMonitor from './components/DetectionConfidenceMonitor';
+import OpsCommandCenter from './components/OpsCommandCenter';
+import BrandMerchandisingMap from './components/BrandMerchandisingMap';
 
 const API_BASE = getApiUrl();
 const DEFAULT_STORE = 'STORE_BLR_002';
 const STORE_IDS = ['STORE_BLR_002', 'ST1008'];
 
 type ViewId = 'dashboard' | 'analytics' | 'events' | 'comparison' | 'cameras';
+type NavItem = { id: ViewId; label: string; description: string };
 
 const NavIcons = {
   dashboard: (
@@ -55,6 +60,14 @@ const NavIcons = {
     </svg>
   ),
 };
+
+const NAV_ITEMS: NavItem[] = [
+  { id: 'dashboard',  label: 'Live Dashboard',    description: 'KPIs, funnel, queue, heatmap' },
+  { id: 'analytics',  label: 'Journey Analytics', description: 'Visitor trends and zone behavior' },
+  { id: 'cameras',    label: 'Vision Center',     description: 'Camera feeds and overlays' },
+  { id: 'events',     label: 'Live Operations',   description: 'Event stream and active alerts' },
+  { id: 'comparison', label: 'Store Comparison',  description: 'Compare stores side by side' },
+];
 
 export const App: React.FC = () => {
   const [selectedStore, setSelectedStore] = useState<string>(DEFAULT_STORE);
@@ -134,6 +147,172 @@ export const App: React.FC = () => {
   const activeDeltas = metricDeltas[selectedStore];
   const isFlashed = lastUpdatedStore === selectedStore;
 
+  const renderKpiGrid = () => (
+    <div className="kpi-grid">
+      <MetricCard
+        title="Total Visitors"
+        value={activeMetrics.unique_visitors}
+        subtext="Unique customer entries"
+        type="visitors"
+        glow={isFlashed}
+        delta={activeDeltas?.unique_visitors}
+        history={activeHistory?.unique_visitors}
+      />
+      <MetricCard
+        title="Conversion Rate"
+        value={`${(activeMetrics.conversion_rate * 100).toFixed(1)}%`}
+        subtext="Visits to purchases"
+        type="conversion"
+        glow={isFlashed}
+        delta={activeDeltas?.conversion_rate}
+        history={activeHistory?.conversion_rate}
+      />
+      <MetricCard
+        title="Checkout Queue"
+        value={activeMetrics.queue_depth}
+        subtext="Customers in line"
+        type="queue"
+        glow={isFlashed}
+        delta={activeDeltas?.queue_depth}
+        history={activeHistory?.queue_depth}
+      />
+      <MetricCard
+        title="Abandonment Rate"
+        value={`${(activeMetrics.abandonment_rate * 100).toFixed(1)}%`}
+        subtext="Queue desertions"
+        type="abandonment"
+        glow={isFlashed}
+        delta={activeDeltas?.abandonment_rate}
+        history={activeHistory?.abandonment_rate}
+      />
+    </div>
+  );
+
+  const renderPanelTitle = (
+    icon: React.ReactNode,
+    title: string,
+    badge?: React.ReactNode,
+  ) => (
+    <div className="panel-title">
+      {icon}
+      {title}
+      {badge}
+    </div>
+  );
+
+  const renderFunnelPanel = (title = 'Conversion Funnel') => (
+    <div className="panel-card">
+      {renderPanelTitle(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M4 6h16M7 12h10M10 18h4" />
+        </svg>,
+        title,
+      )}
+      <FunnelChart stages={funnelData} />
+    </div>
+  );
+
+  const renderQueuePanel = (title = 'Checkout Queue') => (
+    <div className="panel-card">
+      {renderPanelTitle(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+        </svg>,
+        title,
+      )}
+      <QueueTelemetry queueDepth={activeMetrics.queue_depth} />
+    </div>
+  );
+
+  const renderHeatmapPanel = (title = 'Zone Dwell Heatmap') => (
+    <div className="panel-card">
+      {renderPanelTitle(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>,
+        title,
+      )}
+      <HeatmapChart zones={activeMetrics.avg_dwell_per_zone} />
+    </div>
+  );
+
+  const renderTimelinePanel = (title = 'Visitor Timeline', wide = true) => (
+    <div className={`panel-card ${wide ? 'span-2' : ''}`}>
+      {renderPanelTitle(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>,
+        title,
+        <span className="panel-title-badge">
+          LAST {activeHistory?.unique_visitors?.length ?? 0} pts
+        </span>,
+      )}
+      <VisitorTimeline history={activeHistory} />
+    </div>
+  );
+
+  const renderAnomaliesPanel = (title = 'Active Anomalies', compact = false) => (
+    <div className="panel-card">
+      {renderPanelTitle(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>,
+        title,
+        anomalies.length > 0 && (
+          <span className="panel-title-badge alert-badge">
+            {anomalies.length}{compact ? '' : ' alerts'}
+          </span>
+        ),
+      )}
+      <AnomaliesLog anomalies={anomalies} />
+    </div>
+  );
+
+  const renderSimulationControls = () => (
+    <div className="simulation-bar">
+      <div className="simulation-status">
+        <span className="simulation-dot" />
+        <span>Live synchronized simulation</span>
+      </div>
+
+      <div className="simulation-actions">
+        <button className="control-btn" onClick={handleRestartSimulation}>
+          Sync & Restart
+        </button>
+        <span className="speed-label">Speed:</span>
+        {[0.5, 1.0, 2.0, 5.0, 10.0].map((s) => (
+          <button
+            key={s}
+            className={`speed-btn ${speed === s ? 'active' : ''}`}
+            onClick={() => handleSpeedChange(s)}
+          >
+            {s}x
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderDashboardShortcuts = () => (
+    <div className="view-shortcut-grid">
+      {NAV_ITEMS.filter((item) => item.id !== 'dashboard').map((item) => (
+        <button
+          key={item.id}
+          className="view-shortcut"
+          onClick={() => setActiveView(item.id)}
+        >
+          <span className="view-shortcut-icon">{NavIcons[item.id]}</span>
+          <span>
+            <strong>{item.label}</strong>
+            <small>{item.description}</small>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="app-shell">
 
@@ -156,15 +335,7 @@ export const App: React.FC = () => {
         <nav className="sidebar-nav">
           <div className="nav-section-label">Navigation</div>
 
-          {(
-            [
-              { id: 'dashboard',  label: 'Live Dashboard' },
-              { id: 'analytics',  label: 'Journey Analytics' },
-              { id: 'cameras',    label: 'Vision Center' },
-              { id: 'events',     label: 'Live Operations' },
-              { id: 'comparison', label: 'Store Comparison' },
-            ] as const
-          ).map((item) => (
+          {NAV_ITEMS.map((item) => (
             <div
               key={item.id}
               className={`nav-item ${activeView === item.id ? 'active' : ''}`}
@@ -188,7 +359,7 @@ export const App: React.FC = () => {
                   padding: '1px 7px',
                   letterSpacing: '0.04em',
                 }}>
-                  5 CAMS
+                  CAMS
                 </span>
               )}
 
@@ -247,115 +418,9 @@ export const App: React.FC = () => {
           {/* ═══════════════════ DASHBOARD VIEW ═══════════════════ */}
           {activeView === 'dashboard' && (
             <>
-              {/* Simulation Control Bar */}
-              <div className="panel-card" style={{
-                padding: '14px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px',
-                background: 'linear-gradient(135deg, #fdf4ff, #ede9fe)',
-                borderColor: 'rgba(139,92,246,0.2)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                  <span style={{
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#10b981',
-                    boxShadow: '0 0 8px rgba(16,185,129,0.5)',
-                    display: 'inline-block',
-                    animation: 'breathe 2s ease-in-out infinite',
-                  }} />
-                  <span style={{
-                    fontSize: '0.78rem',
-                    fontWeight: 800,
-                    color: '#4c1d95',
-                    letterSpacing: '0.06em',
-                  }}>
-                    ⚡ LIVE SYNCHRONIZED SIMULATION
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                  <button
-                    onClick={handleRestartSimulation}
-                    style={{
-                      border: '1px solid rgba(139,92,246,0.3)',
-                      color: '#6d28d9',
-                      padding: '5px 12px',
-                      borderRadius: '8px',
-                      background: 'white',
-                      cursor: 'pointer',
-                      fontSize: '0.73rem',
-                      fontWeight: 700,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    🔄 Sync & Restart
-                  </button>
-                  <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Speed:</span>
-                  {[0.5, 1.0, 2.0, 5.0, 10.0].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => handleSpeedChange(s)}
-                      style={{
-                        padding: '4px 10px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        background: speed === s ? '#8b5cf6' : 'white',
-                        color: speed === s ? 'white' : '#6b7280',
-                        border: speed === s ? '1px solid #8b5cf6' : '1px solid rgba(139,92,246,0.18)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                        boxShadow: speed === s ? '0 2px 8px rgba(139,92,246,0.25)' : 'none',
-                      }}
-                    >
-                      {s}x
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* KPI Cards */}
-              <div className="kpi-grid">
-                <MetricCard
-                  title="Total Visitors"
-                  value={activeMetrics.unique_visitors}
-                  subtext="Unique customer entries"
-                  type="visitors"
-                  glow={isFlashed}
-                  delta={activeDeltas?.unique_visitors}
-                  history={activeHistory?.unique_visitors}
-                />
-                <MetricCard
-                  title="Conversion Rate"
-                  value={`${(activeMetrics.conversion_rate * 100).toFixed(1)}%`}
-                  subtext="Visits → purchases"
-                  type="conversion"
-                  glow={isFlashed}
-                  delta={activeDeltas?.conversion_rate}
-                  history={activeHistory?.conversion_rate}
-                />
-                <MetricCard
-                  title="Checkout Queue"
-                  value={activeMetrics.queue_depth}
-                  subtext="Customers in line"
-                  type="queue"
-                  glow={isFlashed}
-                  delta={activeDeltas?.queue_depth}
-                  history={activeHistory?.queue_depth}
-                />
-                <MetricCard
-                  title="Abandonment Rate"
-                  value={`${(activeMetrics.abandonment_rate * 100).toFixed(1)}%`}
-                  subtext="Queue desertions"
-                  type="abandonment"
-                  glow={isFlashed}
-                  delta={activeDeltas?.abandonment_rate}
-                  history={activeHistory?.abandonment_rate}
-                />
-              </div>
+              {renderSimulationControls()}
+              {renderDashboardShortcuts()}
+              {renderKpiGrid()}
 
               {/* Intelligence Feature Cards */}
               <div className="feature-grid">
@@ -364,149 +429,40 @@ export const App: React.FC = () => {
                 <CustomerArchetypes items={activeMetrics.customer_archetypes} />
               </div>
 
-              {/* AI Insights */}
-              <div className="panel-card">
-                <div className="panel-title">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M12 2a10 10 0 0 1 0 20A10 10 0 0 1 12 2z" />
-                    <path d="M12 8v4M12 16h.01" />
-                  </svg>
-                  AI Insights
-                  <span className="panel-title-badge">LIVE</span>
-                </div>
-                <InsightCards metrics={activeMetrics} anomalyCount={anomalies.length} />
-              </div>
+              <StoreNarrative metrics={activeMetrics} anomalies={anomalies} />
+              <BrandMerchandisingMap metrics={activeMetrics} />
 
-              {/* Main chart grid */}
               <div className="primary-grid">
-                {/* Funnel */}
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M4 6h16M7 12h10M10 18h4" />
-                    </svg>
-                    Conversion Funnel
-                  </div>
-                  <FunnelChart stages={funnelData} />
-                </div>
-
-                {/* Queue + Heatmap stacked */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                  <div className="panel-card">
-                    <div className="panel-title">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                      </svg>
-                      Checkout Queue
-                    </div>
-                    <QueueTelemetry queueDepth={activeMetrics.queue_depth} />
-                  </div>
-
-                  <div className="panel-card">
-                    <div className="panel-title">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
-                        <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-                      </svg>
-                      Zone Dwell Heatmap
-                    </div>
-                    <HeatmapChart zones={activeMetrics.avg_dwell_per_zone} />
-                  </div>
+                {renderFunnelPanel()}
+                <div className="stacked-panels">
+                  {renderQueuePanel()}
+                  {renderHeatmapPanel()}
                 </div>
               </div>
 
-              {/* Bottom: Timeline + Anomalies */}
               <div className="secondary-grid">
-                <div className="panel-card" style={{ gridColumn: 'span 2' }}>
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                    Visitor Timeline
-                    <span className="panel-title-badge">
-                      LAST {activeHistory?.unique_visitors?.length ?? 0} pts
-                    </span>
-                  </div>
-                  <VisitorTimeline history={activeHistory} />
-                </div>
-
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    Active Anomalies
-                    {anomalies.length > 0 && (
-                      <span className="panel-title-badge" style={{
-                        background: 'rgba(244,63,94,0.08)',
-                        color: '#881337',
-                        borderColor: 'rgba(244,63,94,0.2)',
-                      }}>
-                        {anomalies.length} alerts
-                      </span>
-                    )}
-                  </div>
-                  <AnomaliesLog anomalies={anomalies} />
-                </div>
+                {renderTimelinePanel()}
+                <DetectionConfidenceMonitor metrics={activeMetrics} />
               </div>
             </>
           )}
 
-          {/* ═══════════════════ ANALYTICS VIEW ═══════════════════ */}
+          {/* ANALYTICS VIEW */}
           {activeView === 'analytics' && (
             <>
-              <div className="kpi-grid">
-                <MetricCard title="Total Visitors" value={activeMetrics.unique_visitors} subtext="Unique entries" type="visitors" history={activeHistory?.unique_visitors} />
-                <MetricCard title="Conversion Rate" value={`${(activeMetrics.conversion_rate * 100).toFixed(1)}%`} subtext="Purchase rate" type="conversion" history={activeHistory?.conversion_rate} />
-                <MetricCard title="Queue Depth" value={activeMetrics.queue_depth} subtext="Current queue" type="queue" history={activeHistory?.queue_depth} />
-                <MetricCard title="Abandonment" value={`${(activeMetrics.abandonment_rate * 100).toFixed(1)}%`} subtext="Checkout exits" type="abandonment" history={activeHistory?.abandonment_rate} />
-              </div>
+              {renderKpiGrid()}
 
               <div className="primary-grid">
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                    Visitor Volume Over Time
-                  </div>
-                  <VisitorTimeline history={activeHistory} />
-                </div>
-
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M4 6h16M7 12h10M10 18h4" />
-                    </svg>
-                    Conversion Funnel Analysis
-                  </div>
-                  <FunnelChart stages={funnelData} />
-                </div>
+                {renderTimelinePanel('Visitor Volume Over Time', false)}
+                {renderFunnelPanel('Conversion Funnel Analysis')}
               </div>
 
               <div className="secondary-grid">
-                <div className="panel-card" style={{ gridColumn: 'span 2' }}>
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
-                      <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-                    </svg>
-                    Zone Traffic Heatmap
-                  </div>
-                  <HeatmapChart zones={activeMetrics.avg_dwell_per_zone} />
-                </div>
-
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    Checkout Performance
-                  </div>
-                  <QueueTelemetry queueDepth={activeMetrics.queue_depth} />
-                </div>
+                {renderHeatmapPanel('Zone Traffic Heatmap')}
+                {renderQueuePanel('Checkout Performance')}
               </div>
+
+              <BrandMerchandisingMap metrics={activeMetrics} />
             </>
           )}
 
@@ -515,46 +471,26 @@ export const App: React.FC = () => {
             <>
               <div className="primary-grid">
                 <div className="panel-card">
-                  <div className="panel-title">
+                  {renderPanelTitle(
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <circle cx="12" cy="12" r="2" /><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
-                    </svg>
-                    Live CCTV Event Feed
-                    <span className="panel-title-badge">STREAMING</span>
-                  </div>
+                    </svg>,
+                    'Live CCTV Event Feed',
+                    <span className="panel-title-badge">STREAMING</span>,
+                  )}
                   <LiveEventTicker apiBase={API_BASE} storeId={selectedStore} />
                 </div>
 
-                <div className="panel-card">
-                  <div className="panel-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    Active Anomalies
-                    {anomalies.length > 0 && (
-                      <span className="panel-title-badge" style={{
-                        background: 'rgba(244,63,94,0.08)',
-                        color: '#881337',
-                        borderColor: 'rgba(244,63,94,0.2)',
-                      }}>
-                        {anomalies.length}
-                      </span>
-                    )}
-                  </div>
-                  <AnomaliesLog anomalies={anomalies} />
-                </div>
+                <OpsCommandCenter
+                  metrics={activeMetrics}
+                  anomalies={anomalies}
+                  connectionStatus={connectionStatus}
+                />
               </div>
 
-              <div className="panel-card">
-                <div className="panel-title">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M12 2a10 10 0 0 1 0 20A10 10 0 0 1 12 2z" />
-                    <path d="M12 8v4M12 16h.01" />
-                  </svg>
-                  System Insights
-                </div>
-                <InsightCards metrics={activeMetrics} anomalyCount={anomalies.length} />
+              <div className="secondary-grid">
+                {renderAnomaliesPanel('Operations Alerts')}
+                <DetectionConfidenceMonitor metrics={activeMetrics} />
               </div>
             </>
           )}
@@ -625,40 +561,7 @@ export const App: React.FC = () => {
           {/* ═══════════════════ CAMERA FEEDS VIEW ═══════════════════ */}
           {activeView === 'cameras' && (
             <>
-              <div className="kpi-grid">
-                <MetricCard
-                  title="Total Visitors"
-                  value={activeMetrics.unique_visitors}
-                  subtext="Unique entries"
-                  type="visitors"
-                  glow={isFlashed}
-                  history={activeHistory?.unique_visitors}
-                />
-                <MetricCard
-                  title="Conversion Rate"
-                  value={`${(activeMetrics.conversion_rate * 100).toFixed(1)}%`}
-                  subtext="Purchases / entries"
-                  type="conversion"
-                  glow={isFlashed}
-                  history={activeHistory?.conversion_rate}
-                />
-                <MetricCard
-                  title="Checkout Queue"
-                  value={activeMetrics.queue_depth}
-                  subtext="Active in line"
-                  type="queue"
-                  glow={isFlashed}
-                  history={activeHistory?.queue_depth}
-                />
-                <MetricCard
-                  title="Abandonment"
-                  value={`${(activeMetrics.abandonment_rate * 100).toFixed(1)}%`}
-                  subtext="Queue desertions"
-                  type="abandonment"
-                  glow={isFlashed}
-                  history={activeHistory?.abandonment_rate}
-                />
-              </div>
+              {renderKpiGrid()}
 
               <div className="panel-card">
                 <div className="panel-title">

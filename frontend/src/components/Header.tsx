@@ -11,6 +11,7 @@ const VIEW_TITLES: Record<string, string> = {
   analytics: 'Deep Analytics',
   events: 'Event Feed',
   comparison: 'Store Comparison',
+  cameras: 'Vision Center',
 };
 
 export const TopBar: React.FC<TopBarProps> = ({ activeView, storeId, lastUpdated }) => {

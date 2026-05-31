@@ -1,5 +1,3 @@
-import React from "react";
-
 export default function CustomerArchetypes({ items }: any) {
   if (!items?.length) return null;
 

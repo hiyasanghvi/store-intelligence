@@ -60,10 +60,20 @@ or run `cd frontend && npm install && npm run dev` to launch the full React Comm
 | `/dashboard` | GET | Live HTML dashboard (SSE-based, no JS framework) |
 | `/docs` | GET | Interactive Swagger UI |
 
-**Example store ID**: `STORE_BLR_002`
+**Example store IDs**: `STORE_BLR_002`, `ST1008`
+
+The React dashboard is configured for two demo stores:
+
+| Store ID | What is available locally |
+|----------|---------------------------|
+| `STORE_BLR_002` | Primary CCTV-derived event stream in `data/events.jsonl` plus POS in `data/pos_transactions.csv` |
+| `ST1008` | Brigade Road POS rows in `data/Brigade_Bangalore_10_April_26_1.csv`; during simulation, CCTV events are remapped from the primary event stream so the two-store dashboard has live behavioural data |
+
+The original hiring challenge describes a larger `5 stores x 3 camera angles` dataset. This repository's checked-in local assets are a smaller demo set: two configured store IDs, five shared CCTV recordings, one primary generated event stream, and a Brigade Road POS file. The simulation layer generates ST1008 demo events only when no real ST1008 events are present.
 
 ```bash
 curl http://localhost:8000/stores/STORE_BLR_002/metrics
+curl http://localhost:8000/stores/ST1008/metrics
 curl http://localhost:8000/stores/STORE_BLR_002/funnel
 curl http://localhost:8000/stores/STORE_BLR_002/heatmap
 curl http://localhost:8000/stores/STORE_BLR_002/anomalies
@@ -117,7 +127,9 @@ If you don't have the raw clips handy, the pre-generated events can be replayed 
 # Start API
 docker compose up -d
 
-# Trigger simulation (replays data/events.jsonl at 1x speed)
+# Trigger simulation (replays data/events.jsonl at 1x speed).
+# If ST1008 events are absent, the API remaps the primary CCTV event stream
+# into ST1008 with unique event IDs and visitor IDs for the two-store demo.
 curl -X POST "http://localhost:8000/simulation/start?speed=1.0&cam_id=CAM_1"
 
 # Speed it up without restarting
@@ -293,12 +305,21 @@ CCTV Clips (MP4)
 
 ---
 
+## Brand-Aware Layout Intelligence
+
+The React dashboard also uses the Brigade Road store layout workbook supplied with the dataset. The workbook embeds the actual floor layout as an image, including brand bays such as EB Korean, The Face Shop, Good Vibes, DermDoc, Minimalist, Aqualogica, Lakme Skin, Maybelline, Faces Canada, Lakme, Colorbar + Sugar, Swiss Beauty, Renee / NY Bae, Alps Goodness, Streax, Accessories, PMU, and the cash counter.
+
+Those placements are surfaced in the **Brand Merchandising Map**, which connects live zone dwell and visit counts back to real brand fixtures. This makes the dashboard explain not only "which zone is hot", but also "which brand wall or bay deserves staff attention."
+
+---
+
 ## Live Dashboard Features (Part E)
 
 The React Command Center at **http://localhost:3000** (or your Vercel URL) shows:
 
 - 🔴 **Live connection indicator** — SSE connection status with exponential backoff reconnect
 - 📊 **Real-time KPI cards** — unique visitors, conversion rate, queue depth, abandonment rate — with delta badges showing per-update changes
+- 🧭 **Brand Merchandising Map** — maps live zone attention to actual Brigade Road brand bays from the store layout workbook
 - 🔽 **Conversion funnel SVG chart** — live drop-off percentages at each stage
 - 🌡️ **Zone heatmap** — zone visit frequency with normalised intensity
 - 🚨 **Anomaly log** — colour-coded alerts with `suggested_action` strings

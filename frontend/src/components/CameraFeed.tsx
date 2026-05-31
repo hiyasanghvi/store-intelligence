@@ -4,6 +4,9 @@ interface Camera {
   cam_id: string;
   name: string;
   filename: string;
+  type?: string;
+  description?: string;
+  zones?: Record<string, unknown>;
   available: boolean;
   stream_url: string;
 }
@@ -13,17 +16,25 @@ interface CameraFeedProps {
   storeId: string;
 }
 
-const STORE_CAM_MAPPING: Record<string, string[]> = {
-  STORE_BLR_002: ['CAM_1', 'CAM_2', 'CAM_3', 'CAM_4', 'CAM_5'],
-  ST1008: ['CAM_1', 'CAM_2', 'CAM_3', 'CAM_4', 'CAM_5'],
-};
+interface CameraStats {
+  cam_id?: string;
+  people: number;
+  frame: number;
+  fps: number;
+}
 
 const CAM_LABELS: Record<string, string> = {
-  CAM_1: 'Main Entrance (CCTV 1)',
-  CAM_2: 'Main Floor (CCTV 2)',
-  CAM_3: 'Billing Counter (CCTV 3)',
-  CAM_4: 'Secondary Entrance (CCTV 4)',
-  CAM_5: 'Billing Queue (CCTV 5)',
+  CAM_1: 'Main Entrance (CAM 3)',
+  CAM_2: 'Makeup Area (CCTV 2)',
+  CAM_3: 'Skincare Zone (CAM 1)',
+  CAM_4: 'Back Store / Inventory (CAM 4)',
+  CAM_5: 'Billing Queue (CAM 5)',
+};
+
+const CAM_TYPE_LABELS: Record<string, string> = {
+  CAM_2: 'makeup area',
+  CAM_3: 'skincare',
+  CAM_4: 'back store / inventory',
 };
 
 const CAM_ZONES_CONFIG: Record<string, { label: string; zones: { name: string; color: string }[] }> = {
@@ -65,13 +76,31 @@ const CAM_ZONES_CONFIG: Record<string, { label: string; zones: { name: string; c
   }
 };
 
+const ZONE_COLORS: Record<string, string> = {
+  ENTRY_THRESHOLD: '#00dc64',
+  BILLING_COUNTER: '#008cff',
+  BILLING_QUEUE: '#0050dc',
+  SKINCARE: '#b43cff',
+  HAIRCARE: '#ff783c',
+  FRAGRANCES: '#3cc8ff',
+  WELLNESS: '#3cffb4',
+  IMPULSE_BUYS: '#50c8ff',
+};
+
+function formatZoneName(zoneName: string): string {
+  return zoneName
+    .split('_')
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [yoloOnline, setYoloOnline] = useState(false);
-  const [yoloStats, setYoloStats] = useState<{ people: number; frame: number; fps: number } | null>(null);
+  const [yoloStats, setYoloStats] = useState<CameraStats | null>(null);
   const [speed, setSpeed] = useState(1.0);
   const [switching, setSwitching] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
@@ -81,6 +110,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   });
 
   const [streamError, setStreamError] = useState(false);
+  void storeId;
 
   // Reset stream error when camera or yolo status changes
   useEffect(() => {
@@ -95,8 +125,8 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         const r = await fetch(`${yoloBase}/stats`);
         if (r.ok) {
           if (active) {
-            setYoloOnline(true);
             const data = await r.json();
+            setYoloOnline(!data.error);
             setYoloStats(data);
           }
         } else {
@@ -141,6 +171,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
       .then((d) => {
         const cams: Camera[] = d.cameras ?? [];
         setCameras(cams);
+        setSelected((current) => current ?? cams.find((cam) => cam.available)?.cam_id ?? cams[0]?.cam_id ?? null);
         setLoading(false);
       })
       .catch(() => {
@@ -149,15 +180,17 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
       });
   }, [apiBase]);
 
-  // Handle selected camera switching when store changes
+  // Keep a valid selected camera when the API camera list changes.
   useEffect(() => {
-    const allowed = STORE_CAM_MAPPING[storeId] ?? [];
-    if (allowed.length > 0) {
-      const activeCam = allowed[0];
+    if (cameras.length === 0) return;
+
+    const currentStillExists = selected && cameras.some((cam) => cam.cam_id === selected);
+    if (!currentStillExists) {
+      const activeCam = cameras.find((cam) => cam.available)?.cam_id ?? cameras[0].cam_id;
       setSelected(activeCam);
-      triggerYoloSwitch(activeCam);
+      if (activeCam) triggerYoloSwitch(activeCam);
     }
-  }, [storeId]);
+  }, [cameras, selected]);
 
   const triggerYoloSwitch = async (camId: string) => {
     setSwitching(true);
@@ -180,6 +213,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
   const handleSpeedChange = async (newSpeed: number) => {
     setSpeed(newSpeed);
+    setStreamKey(Date.now());
     if (!selected) return;
     try {
       await fetch(`${apiBase}/simulation/simulation/speed?speed=${newSpeed}`, { method: 'POST' }).catch(() => {});
@@ -199,8 +233,31 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
     }
   };
 
-  const allowedCams = STORE_CAM_MAPPING[storeId] ?? [];
-  const currentCamConfig = selected ? CAM_ZONES_CONFIG[selected] : null;
+  const visibleCameras = cameras;
+  const selectedCamera = selected ? cameras.find((cam) => cam.cam_id === selected) : undefined;
+  const dynamicZones = selectedCamera?.zones
+    ? Object.keys(selectedCamera.zones).map((zoneName) => ({
+        name: formatZoneName(zoneName),
+        color: ZONE_COLORS[zoneName] ?? '#94a3b8',
+      }))
+    : [];
+  const currentCamConfig = selected
+    ? {
+        label: selectedCamera?.type ?? CAM_ZONES_CONFIG[selected]?.label,
+        zones: dynamicZones.length > 0 ? dynamicZones : CAM_ZONES_CONFIG[selected]?.zones ?? [],
+      }
+    : null;
+  const selectedLabel = selected
+    ? CAM_LABELS[selected] ?? selectedCamera?.description ?? selectedCamera?.name ?? selected
+    : '';
+  const yoloCamId = yoloStats?.cam_id?.toUpperCase();
+  const selectedCamId = selected?.toUpperCase();
+  const useLocalYoloStream = Boolean(yoloOnline && selectedCamId && yoloCamId === selectedCamId && !switching);
+  const streamSrc = selected
+    ? useLocalYoloStream
+      ? `${yoloBase}/stream?cam=${selected}&t=${streamKey}`
+      : `${apiBase}/cameras/stream/${selected}?speed=${speed}&t=${streamKey}`
+    : '';
 
   if (loading) {
     return (
@@ -268,21 +325,22 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
           {!streamError ? (
             <div className="cam-video-wrap">
-              <div className={`cam-overlay-badge live ${yoloOnline ? 'local' : 'simulated'}`}>
+              <div className={`cam-overlay-badge live ${useLocalYoloStream ? 'local' : 'simulated'}`}>
                 <span className="cam-live-dot green-pulse" />
-                {yoloOnline ? 'YOLO LIVE (LOCAL)' : 'YOLO LIVE (SIMULATED)'}
+                {useLocalYoloStream ? 'YOLO LIVE (LOCAL)' : 'REAL CCTV FOOTAGE'}
               </div>
               <div className="cam-overlay-label">
                 <span className="cam-overlay-icon">⚡</span>
-                {selected && CAM_LABELS[selected]}
+                {selectedLabel}
                 <span className="cam-overlay-zone">AI-Powered</span>
               </div>
               <img
-                src={yoloOnline ? `${yoloBase}/stream?t=${streamKey}` : `${apiBase}/cameras/stream/${selected}?t=${streamKey}`}
-                alt="YOLO Object Detection Stream"
+                key={`${selected}-${useLocalYoloStream ? 'yolo' : 'recording'}-${streamKey}`}
+                src={streamSrc}
+                alt={`${selectedLabel} CCTV stream`}
                 className="cam-video-el img-stream"
                 onError={() => {
-                  if (yoloOnline) {
+                  if (useLocalYoloStream) {
                     setYoloOnline(false);
                   } else {
                     setStreamError(true);
@@ -330,7 +388,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         </div>
 
         {/* Telemetry Sidebar */}
-        {yoloOnline && (
+        {useLocalYoloStream && (
           <div className="cam-telemetry-sidebar">
             <div className="sidebar-section">
               <div className="section-title">Model Specifications</div>
@@ -391,16 +449,15 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         )}
       </div>
 
-      {/* Camera thumbnail grid (filtered to active store) */}
+      {/* Camera thumbnail grid */}
       <div className="cam-thumb-grid">
-        {cameras
-          .filter((cam) => allowedCams.includes(cam.cam_id))
+        {visibleCameras
           .map((cam) => (
             <button
               key={cam.cam_id}
               className={`cam-thumb ${selected === cam.cam_id ? 'active' : ''} ${!cam.available ? 'offline' : ''}`}
               onClick={() => cam.available && handleCameraChange(cam.cam_id)}
-              title={cam.available ? `Switch to ${CAM_LABELS[cam.cam_id] ?? cam.name}` : 'Feed unavailable'}
+              title={cam.available ? `Switch to ${CAM_LABELS[cam.cam_id] ?? cam.description ?? cam.name}` : 'Feed unavailable'}
             >
               <div className="cam-thumb-inner">
                 <div className={`cam-thumb-placeholder ${cam.available ? 'active-indicator' : 'offline'}`}>
@@ -415,10 +472,40 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
               </div>
               <div className="cam-thumb-label">
                 <span className={`cam-thumb-status-dot ${cam.available ? 'online' : 'offline'}`} />
-                {CAM_LABELS[cam.cam_id] ?? cam.name}
+                {CAM_LABELS[cam.cam_id] ?? cam.description ?? cam.name}
               </div>
             </button>
           ))}
+      </div>
+
+      <div className="footage-detail-panel">
+        <div className="footage-detail-title">Footage Details</div>
+        <div className="footage-detail-list">
+          {visibleCameras.map((cam) => {
+            const label = CAM_LABELS[cam.cam_id] ?? cam.description ?? cam.name;
+            const zoneCount = cam.zones ? Object.keys(cam.zones).length : 0;
+            return (
+              <button
+                key={`${cam.cam_id}-detail`}
+                type="button"
+                className={`footage-detail-row ${selected === cam.cam_id ? 'active' : ''}`}
+                onClick={() => cam.available && handleCameraChange(cam.cam_id)}
+                disabled={!cam.available}
+              >
+                <span className="footage-detail-id">{cam.cam_id}</span>
+                <span className="footage-detail-copy">
+                  <strong>{label}</strong>
+                  <small>
+                    File: {cam.filename || 'Not found'} · Type: {(CAM_TYPE_LABELS[cam.cam_id] ?? cam.type ?? 'recording').replace(/_/g, ' ')} · Overlays: {zoneCount}
+                  </small>
+                </span>
+                <span className={`footage-detail-state ${cam.available ? 'online' : 'offline'}`}>
+                  {cam.available ? 'Available' : 'Missing'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

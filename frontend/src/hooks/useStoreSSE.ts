@@ -62,6 +62,7 @@ export interface MetricDeltas {
 }
 
 const MAX_HISTORY = 20;
+const DEFAULT_STORE_IDS = ['STORE_BLR_002', 'ST1008'];
 
 // Use __API_URL__ injected by Vite's define config for production builds (Railway/Vercel).
 declare const __API_URL__: string;
@@ -91,7 +92,7 @@ export function getApiUrl(): string {
 
 const _DEFAULT_API_URL = getApiUrl();
 
-export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[] = ['STORE_BLR_002', 'ST1008']) {
+export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[] = DEFAULT_STORE_IDS) {
   const [storesData, setStoresData] = useState<Record<string, StoreMetrics>>({});
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [lastUpdatedStore, setLastUpdatedStore] = useState<string | null>(null);
@@ -125,22 +126,29 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
       };
     });
 
-    setMetricDeltas((prev) => {
-      setStoresData((prevMetrics) => {
-        const old = prevMetrics[storeId];
-        if (!old) return prevMetrics;
-        const deltas: MetricDeltas = {
-          unique_visitors: newMetrics.unique_visitors - old.unique_visitors,
-          conversion_rate: newMetrics.conversion_rate - old.conversion_rate,
-          queue_depth: newMetrics.queue_depth - old.queue_depth,
-          abandonment_rate: newMetrics.abandonment_rate - old.abandonment_rate,
-        };
-        setMetricDeltas((d) => ({ ...d, [storeId]: deltas }));
-        return prevMetrics;
-      });
-      return prev;
-    });
   }, []);
+
+  const applyMetricsUpdate = useCallback((storeId: string, newMetrics: StoreMetrics) => {
+    updateHistory(storeId, newMetrics);
+    setStoresData((prevMetrics) => {
+      const old = prevMetrics[storeId];
+      if (old) {
+        setMetricDeltas((prevDeltas) => ({
+          ...prevDeltas,
+          [storeId]: {
+            unique_visitors: newMetrics.unique_visitors - old.unique_visitors,
+            conversion_rate: newMetrics.conversion_rate - old.conversion_rate,
+            queue_depth: newMetrics.queue_depth - old.queue_depth,
+            abandonment_rate: newMetrics.abandonment_rate - old.abandonment_rate,
+          },
+        }));
+      }
+      return {
+        ...prevMetrics,
+        [storeId]: newMetrics,
+      };
+    });
+  }, [updateHistory]);
 
   useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -160,11 +168,7 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
         try {
           const message = JSON.parse(event.data);
           if (message.type === 'metrics') {
-            updateHistory(message.store_id, message.data);
-            setStoresData((prev) => ({
-              ...prev,
-              [message.store_id]: message.data,
-            }));
+            applyMetricsUpdate(message.store_id, message.data);
             setLastUpdatedStore(message.store_id);
             setTimeout(() => setLastUpdatedStore(null), 1000);
           } else if (message.type === 'reset') {
@@ -194,7 +198,7 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
       if (eventSource) eventSource.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [apiUrl, updateHistory]);
+  }, [apiUrl, applyMetricsUpdate]);
 
   // Polling fallback when SSE is not live
   useEffect(() => {
@@ -207,11 +211,7 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
           const resp = await fetch(`${apiUrl}/stores/${storeId}/metrics`);
           if (resp.ok && active) {
             const data = await resp.json();
-            updateHistory(storeId, data);
-            setStoresData((prev) => ({
-              ...prev,
-              [storeId]: data,
-            }));
+            applyMetricsUpdate(storeId, data);
           }
         } catch {
           // ignore poll errors
@@ -226,7 +226,7 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
       active = false;
       clearInterval(interval);
     };
-  }, [connectionStatus, apiUrl, storeIds, updateHistory]);
+  }, [connectionStatus, apiUrl, storeIds, applyMetricsUpdate]);
 
   return { storesData, connectionStatus, lastUpdatedStore, metricHistory, metricDeltas };
 }
