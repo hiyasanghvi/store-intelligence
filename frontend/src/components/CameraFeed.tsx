@@ -104,10 +104,9 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const [speed, setSpeed] = useState(1.0);
   const [switching, setSwitching] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
-  
   const [yoloBase, setYoloBase] = useState(() => {
   return import.meta.env.VITE_API_URL || apiBase;
-});
+  });
 
   const [streamError, setStreamError] = useState(false);
   void storeId;
@@ -248,12 +247,19 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
       }
     : null;
   const selectedLabel = selected
-    ? CAM_LABELS[selected] ?? selectedCamera?.description ?? selectedCamera?.name ?? selected
-    : '';
-  const yoloCamId = yoloStats?.cam_id?.toUpperCase();
-  const selectedCamId = selected?.toUpperCase();
-  const useLocalYoloStream = false;
-  const streamSrc = selected
+  ? CAM_LABELS[selected] ??
+    selectedCamera?.description ??
+    selectedCamera?.name ??
+    selected
+  : '';
+
+/*
+ * Disable localhost YOLO stream in production (Vercel).
+ * Always use backend camera stream endpoint.
+ */
+const useLocalYoloStream = false;
+
+const streamSrc = selected
   ? `${apiBase}/cameras/stream/${selected}?speed=${speed}&t=${streamKey}`
   : '';
 
