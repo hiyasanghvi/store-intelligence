@@ -92,7 +92,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
   useEffect(() => {
     setStreamError(false);
-  }, [selected]);
+  }, [selected, apiBase]);
 
   const visibleCameras: Camera[] = cameras.length > 0
     ? cameras
@@ -106,11 +106,18 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const selectedId = selectedCamera?.cam_id ?? selected;
   const selectedLabel = CAM_LABELS[selectedId] ?? selectedCamera?.description ?? selectedCamera?.name ?? selectedId;
   const streamSrc = yoloStreamSrc(apiBase, selectedCamera, selectedId);
-  const sourceLabel = selectedCamera?.source === 'backend_recording'
-    ? 'Full recording'
-    : selectedCamera?.source === 'bundled_preview'
-      ? 'Bundled CCTV clip'
-      : 'YOLO stream';
+  const isLocalBrowser = typeof window !== 'undefined'
+    && ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+  const showYoloStream = isLocalBrowser && !streamError;
+  const sourceLabel = showYoloStream
+    ? 'Local YOLO stream'
+    : 'Bundled CCTV clip';
+
+  useEffect(() => {
+    if (!isLocalBrowser || streamError) return;
+    const timeout = window.setTimeout(() => setStreamError(true), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [isLocalBrowser, selectedId, streamError]);
 
   if (loading) {
     return (
@@ -138,20 +145,21 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         <div className="cam-video-wrap">
           <div className="cam-overlay-badge live local">
             <span className="cam-live-dot green-pulse" />
-            YOLO DETECTION LIVE
+            {showYoloStream ? 'YOLO DETECTION LIVE' : 'REAL CCTV PREVIEW'}
           </div>
           <div className="cam-overlay-label">
             <span className="cam-overlay-icon">REC</span>
             {selectedLabel}
-            <span className="cam-overlay-zone">Person boxes + zones</span>
+            <span className="cam-overlay-zone">{showYoloStream ? 'Person boxes + zones' : 'Bundled footage'}</span>
           </div>
 
-          {!streamError ? (
+          {showYoloStream ? (
             <img
               key={selectedId}
               src={streamSrc}
               className="cam-video-el img-stream"
               alt={`${selectedLabel} YOLO detection stream`}
+              onLoad={() => setStreamError(false)}
               onError={() => setStreamError(true)}
             />
           ) : (
