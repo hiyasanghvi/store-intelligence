@@ -184,6 +184,4 @@ store-intelligence/
 
 - [docs/DESIGN.md](docs/DESIGN.md): architecture and product design.
 - [docs/CHOICES.md](docs/CHOICES.md): technical decision log.
-- [docs/presentation_deck.md](docs/presentation_deck.md): slide structure.
-- [docs/video_script.md](docs/video_script.md): demo recording script.
 - [frontend/README.md](frontend/README.md): frontend-specific notes.
