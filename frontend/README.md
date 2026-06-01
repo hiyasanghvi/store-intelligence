@@ -39,7 +39,15 @@ The Brigade Road fixture model lives in `src/data/brigadeFloorPlan.ts`, while th
 
 ## Camera Deployment
 
-The full CCTV recordings are too large to bundle with the Render backend by default. For Vercel demos, `public/cameras/` contains short compressed clips generated from the actual CCTV files. Vision Center uses backend `/cameras/stream/{cam_id}` when full recordings exist, and falls back to these real preview clips when Render has no uploaded recordings, so all five cameras stay clickable and visually distinct.
+The full CCTV recordings are too large to bundle with the Render backend by default. For Vercel demos, `public/cameras/` contains short compressed `.webm` clips generated from the actual CCTV files:
+
+- `CAM_1.webm` from `CAM 3.mp4`
+- `CAM_2.webm` from `CAM 2.mp4`
+- `CAM_3.webm` from `CAM 1.mp4`
+- `CAM_4.webm` from `CAM 4.mp4`
+- `CAM_5.webm` from `CAM 5.mp4`
+
+Vision Center plays these real bundled recordings directly from Vercel, so all five cameras stay clickable and visually distinct even when Render has no uploaded full MP4 files.
 
 ## Local Development
 

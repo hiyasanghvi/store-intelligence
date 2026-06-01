@@ -9,10 +9,10 @@
 
 | Service | URL |
 |---------|-----|
-| **Backend API** | `https://purplle-tech-challenge-production.up.railway.app` |
-| **Live Dashboard** | `https://purplle-tech-challenge.vercel.app` |
-| **Swagger UI** | `https://purplle-tech-challenge-production.up.railway.app/docs` |
-| **Built-in Dashboard** | `https://purplle-tech-challenge-production.up.railway.app/dashboard` |
+| **Backend API** | `https://store-intelligence.onrender.com` |
+| **Live Dashboard** | `https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app/` |
+| **Swagger UI** | `https://store-intelligence.onrender.com/docs` |
+| **Built-in Dashboard** | `https://store-intelligence.onrender.com/dashboard` |
 
 ---
 
@@ -146,36 +146,48 @@ All **138 tests** pass across 11 test files with **89% coverage** covering inges
 
 ---
 
-## Deploying to Railway (Backend)
+## Deploying to Render (Backend)
 
-Railway can deploy directly from your Git repo.
+Render can deploy the FastAPI backend directly from your Git repo.
 
 ### Steps
 
 1. Push your repo to GitHub (make sure `data/store_intelligence.db` is gitignored but `data/events.jsonl` and `data/pos_transactions.csv` are **committed**).
 
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select `store-intelligence`.
+2. Go to [render.com](https://render.com) → **New** → **Web Service** → connect the Git repo.
 
-3. Railway auto-detects the `Dockerfile`. It will build and deploy.
+3. Set the service root/build context to `store-intelligence` if your repo contains the parent folder.
 
-4. Add these **environment variables** in Railway's Settings → Variables:
+4. Use the Dockerfile deployment path, or set:
+
+   | Setting | Value |
+   |---------|-------|
+   | Build Command | `pip install -r requirements.txt` |
+   | Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+
+5. Add these **environment variables** in Render's Settings → Environment:
 
    | Variable | Value |
    |----------|-------|
    | `DATABASE_URL` | `sqlite:///./data/store_intelligence.db` |
    | `POS_CSV_PATH` | `data/pos_transactions.csv` |
+   | `VIDEO_DIR` | optional path if full CCTV recordings are uploaded to Render persistent disk |
 
-   > Railway automatically sets `PORT`. The Dockerfile reads `${PORT:-8000}` so no changes needed.
+   > Render automatically sets `PORT`. The Dockerfile/start command reads it at runtime.
 
-5. Railway will give you a public URL like `https://apex-store-intelligence-production.railway.app`.
+6. Current backend URL:
 
-6. Test it:
-   ```bash
-   curl https://apex-store-intelligence-production.railway.app/health
-   curl https://apex-store-intelligence-production.railway.app/stores/STORE_BLR_002/metrics
+   ```text
+   https://store-intelligence.onrender.com
    ```
 
-> **Note on GPU:** Railway's free and hobby plans are CPU-only. The pipeline automatically detects this and runs YOLOv8 on CPU. Expect ~3–5 fps instead of ~20 fps per clip. The API itself (no YOLO) is fully performant on CPU.
+7. Test it:
+   ```bash
+   curl https://store-intelligence.onrender.com/health
+   curl https://store-intelligence.onrender.com/stores/STORE_BLR_002/metrics
+   ```
+
+> **Note on CCTV recordings:** The full raw MP4 files are large and are not committed by default. The deployed Vercel frontend includes short real CCTV `.webm` preview clips in `frontend/public/cameras/` so Vision Center still shows actual camera footage. If you want Render to stream the full recordings, upload the MP4 files to Render persistent disk or external object storage and set `VIDEO_DIR`.
 
 ---
 
@@ -191,11 +203,15 @@ Railway can deploy directly from your Git repo.
 
    | Variable | Value |
    |----------|-------|
-   | `VITE_API_URL` | `https://purplle-tech-challenge-production.up.railway.app` |
+   | `VITE_API_URL` | `https://store-intelligence.onrender.com` |
 
 5. Deploy. Vercel will run `npm run build` and serve the `dist/` folder.
 
-6. Your dashboard is now live at `https://purplle-tech-challenge.vercel.app`.
+6. Current dashboard URL:
+
+   ```text
+   https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app/
+   ```
 
 > **CORS:** The backend has `allow_origins=["*"]` enabled so Vercel's domain is automatically allowed.
 
@@ -228,7 +244,8 @@ store-intelligence/
 │   │   ├── App.tsx            # Main React app + routing
 │   │   ├── hooks/useStoreSSE.ts  # SSE hook with exponential backoff reconnect
 │   │   └── components/        # MetricCard, FunnelChart, HeatmapChart, AnomaliesLog, etc.
-│   ├── vite.config.ts         # Reads VITE_API_URL for Railway/Vercel
+│   ├── public/cameras/        # Short real CCTV preview clips for deployed Vision Center
+│   ├── vite.config.ts         # Reads VITE_API_URL for Render/Vercel
 │   └── vercel.json            # Vercel deployment config
 ├── tests/
 │   ├── conftest.py
@@ -247,7 +264,7 @@ store-intelligence/
 │   └── CHOICES.md          # 3 key technical decisions with full reasoning
 ├── detection_stream.py     # Standalone MJPEG server for live YOLO stream (port 8001)
 ├── run_pipeline.py         # Windows-friendly pipeline runner
-├── docker-compose.yml      # One-command startup (Railway PORT env var compatible)
+├── docker-compose.yml      # One-command startup (Render PORT env var compatible)
 ├── Dockerfile              # Multi-stage build (CPU/GPU compatible)
 ├── requirements.txt        # All Python dependencies
 └── README.md
@@ -302,7 +319,7 @@ The React Command Center at **http://localhost:3000** (or your Vercel URL) shows
 - 🔽 **Conversion funnel SVG chart** — live drop-off percentages at each stage
 - 🌡️ **Zone heatmap** — zone visit frequency with normalised intensity
 - 🚨 **Anomaly log** — colour-coded alerts with `suggested_action` strings
-- 📹 **Camera feed viewer** — browser-native video player for CCTV clips via HTTP range requests
+- 📹 **Camera feed viewer** — browser-native video player using bundled real CCTV preview clips on Vercel, with backend full-recording stream support when MP4s are available
 - ⏱️ **Simulation controls** — start/stop/speed controls to replay events at 1x–10x speed
 
 Updates appear within **< 100ms** of events hitting `/events/ingest`.
