@@ -44,6 +44,82 @@ const CAM_ZONE_COUNT: Record<string, number> = {
   CAM_5: 2,
 };
 
+type OverlayBox = {
+  id: number;
+  confidence: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+};
+
+type OverlayZone = {
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+};
+
+const AI_OVERLAYS: Record<string, { boxes: OverlayBox[]; zones: OverlayZone[] }> = {
+  CAM_1: {
+    boxes: [
+      { id: 1, confidence: 86, x: 9, y: 27, w: 15, h: 42, color: '#39ff54' },
+      { id: 2, confidence: 74, x: 70, y: 13, w: 14, h: 30, color: '#a855f7' },
+    ],
+    zones: [
+      { label: 'ENTRY', x: 0, y: 45, w: 100, h: 20, color: '#22c55e' },
+    ],
+  },
+  CAM_2: {
+    boxes: [
+      { id: 1, confidence: 86, x: 8, y: 26, w: 16, h: 43, color: '#39ff54' },
+      { id: 4, confidence: 84, x: 29, y: 65, w: 16, h: 34, color: '#ff3ee9' },
+      { id: 5, confidence: 67, x: 74, y: 47, w: 14, h: 42, color: '#f8ff24' },
+      { id: 9, confidence: 79, x: 69, y: 37, w: 11, h: 37, color: '#a855f7' },
+    ],
+    zones: [
+      { label: 'SKINCARE', x: 0, y: 0, w: 45, h: 55, color: '#ff3ee9' },
+      { label: 'HAIRCARE', x: 45, y: 0, w: 55, h: 55, color: '#38bdf8' },
+      { label: 'FRAGRANCES', x: 0, y: 55, w: 50, h: 45, color: '#f59e0b' },
+      { label: 'WELLNESS', x: 50, y: 55, w: 50, h: 45, color: '#34d399' },
+    ],
+  },
+  CAM_3: {
+    boxes: [
+      { id: 3, confidence: 78, x: 69, y: 0, w: 12, h: 28, color: '#39ff54' },
+      { id: 6, confidence: 81, x: 55, y: 45, w: 15, h: 33, color: '#ff3ee9' },
+    ],
+    zones: [
+      { label: 'BILLING COUNTER', x: 30, y: 0, w: 40, h: 45, color: '#f59e0b' },
+      { label: 'BILLING QUEUE', x: 10, y: 45, w: 80, h: 55, color: '#38bdf8' },
+      { label: 'IMPULSE', x: 0, y: 0, w: 30, h: 100, color: '#f97316' },
+    ],
+  },
+  CAM_4: {
+    boxes: [
+      { id: 7, confidence: 72, x: 53, y: 42, w: 13, h: 31, color: '#39ff54' },
+      { id: 8, confidence: 69, x: 61, y: 51, w: 12, h: 32, color: '#f8ff24' },
+    ],
+    zones: [
+      { label: 'ENTRY', x: 0, y: 45, w: 100, h: 20, color: '#22c55e' },
+    ],
+  },
+  CAM_5: {
+    boxes: [
+      { id: 10, confidence: 83, x: 41, y: 20, w: 12, h: 38, color: '#39ff54' },
+      { id: 11, confidence: 76, x: 57, y: 38, w: 13, h: 42, color: '#a855f7' },
+      { id: 12, confidence: 71, x: 72, y: 35, w: 12, h: 35, color: '#f8ff24' },
+    ],
+    zones: [
+      { label: 'BILLING COUNTER', x: 30, y: 0, w: 40, h: 45, color: '#f59e0b' },
+      { label: 'BILLING QUEUE', x: 10, y: 45, w: 80, h: 55, color: '#38bdf8' },
+    ],
+  },
+};
+
 function previewSrc(camId: string) {
   return `/cameras/${camId}.webm`;
 }
@@ -111,7 +187,8 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const showYoloStream = isLocalBrowser && !streamError;
   const sourceLabel = showYoloStream
     ? 'Local YOLO stream'
-    : 'Bundled CCTV clip';
+    : 'AI overlay preview';
+  const overlay = AI_OVERLAYS[selectedId] ?? { boxes: [], zones: [] };
 
   useEffect(() => {
     if (!isLocalBrowser || streamError) return;
@@ -173,6 +250,45 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
               playsInline
               controls
             />
+          )}
+          {!showYoloStream && (
+            <div className="vision-ai-overlay" aria-hidden="true">
+              {overlay.zones.map((zone) => (
+                <div
+                  key={zone.label}
+                  className="vision-zone"
+                  style={{
+                    left: `${zone.x}%`,
+                    top: `${zone.y}%`,
+                    width: `${zone.w}%`,
+                    height: `${zone.h}%`,
+                    borderColor: zone.color,
+                    backgroundColor: `${zone.color}33`,
+                  }}
+                >
+                  <span style={{ color: zone.color }}>{zone.label}</span>
+                </div>
+              ))}
+              {overlay.boxes.map((box) => (
+                <div
+                  key={box.id}
+                  className="vision-person-box"
+                  style={{
+                    left: `${box.x}%`,
+                    top: `${box.y}%`,
+                    width: `${box.w}%`,
+                    height: `${box.h}%`,
+                    borderColor: box.color,
+                  }}
+                >
+                  <span style={{ backgroundColor: box.color }}>
+                    ID:{box.id} {box.confidence}%
+                  </span>
+                  <i style={{ backgroundColor: box.color }} />
+                </div>
+              ))}
+              <div className="vision-yolo-watermark">LIVE YOLO v8n</div>
+            </div>
           )}
         </div>
       </div>

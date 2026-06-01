@@ -2028,6 +2028,77 @@ body::before {
   border-radius: 4px; padding: 1px 6px; margin-left: 4px;
 }
 
+.vision-ai-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.vision-zone {
+  position: absolute;
+  border: 3px solid;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.08);
+}
+
+.vision-zone span {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 7px;
+  background: rgba(10, 10, 18, 0.48);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.vision-person-box {
+  position: absolute;
+  border: 4px solid;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16), 0 0 18px rgba(255, 255, 255, 0.18);
+}
+
+.vision-person-box span {
+  position: absolute;
+  left: -4px;
+  top: -34px;
+  min-width: max-content;
+  padding: 4px 9px;
+  color: #241629;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+
+.vision-person-box i {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.vision-yolo-watermark {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 12px 18px;
+  background: rgba(10, 6, 18, 0.88);
+  color: #ff3b52;
+  font-family: var(--font-mono);
+  font-size: 1.18rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(255, 59, 82, 0.45);
+}
+
 .cam-no-signal {
   width: 100%; aspect-ratio: 16/9;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
