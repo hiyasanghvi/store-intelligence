@@ -631,6 +631,7 @@ async def list_cameras():
     for cam_id, filename in registry.items():
         video_path = VIDEO_DIR / filename
         cam_info = apply_camera_display_override(cam_id, get_zones_for_cam(cam_id))
+        has_recording = video_path.exists()
         cameras.append({
             "cam_id": cam_id,
             "name": cam_info.get("description") or video_path.stem,
@@ -638,7 +639,10 @@ async def list_cameras():
             "type": cam_info.get("type", "recording"),
             "description": cam_info.get("description", video_path.stem),
             "zones": cam_info.get("zones", {}),
-            "available": video_path.exists(),
+            "available": True,
+            "has_recording": has_recording,
+            "source": "backend_recording" if has_recording else "frontend_preview",
+            "preview_url": f"/cameras/{cam_id}.mp4",
             "stream_url": f"/cameras/stream/{cam_id}",
         })
     return {"cameras": cameras}

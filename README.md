@@ -60,20 +60,10 @@ or run `cd frontend && npm install && npm run dev` to launch the full React Comm
 | `/dashboard` | GET | Live HTML dashboard (SSE-based, no JS framework) |
 | `/docs` | GET | Interactive Swagger UI |
 
-**Example store IDs**: `STORE_BLR_002`, `ST1008`
-
-The React dashboard is configured for two demo stores:
-
-| Store ID | What is available locally |
-|----------|---------------------------|
-| `STORE_BLR_002` | Primary CCTV-derived event stream in `data/events.jsonl` plus POS in `data/pos_transactions.csv` |
-| `ST1008` | Brigade Road POS rows in `data/Brigade_Bangalore_10_April_26_1.csv`; during simulation, CCTV events are remapped from the primary event stream so the two-store dashboard has live behavioural data |
-
-The original hiring challenge describes a larger `5 stores x 3 camera angles` dataset. This repository's checked-in local assets are a smaller demo set: two configured store IDs, five shared CCTV recordings, one primary generated event stream, and a Brigade Road POS file. The simulation layer generates ST1008 demo events only when no real ST1008 events are present.
+**Example store ID**: `STORE_BLR_002`
 
 ```bash
 curl http://localhost:8000/stores/STORE_BLR_002/metrics
-curl http://localhost:8000/stores/ST1008/metrics
 curl http://localhost:8000/stores/STORE_BLR_002/funnel
 curl http://localhost:8000/stores/STORE_BLR_002/heatmap
 curl http://localhost:8000/stores/STORE_BLR_002/anomalies
@@ -127,9 +117,7 @@ If you don't have the raw clips handy, the pre-generated events can be replayed 
 # Start API
 docker compose up -d
 
-# Trigger simulation (replays data/events.jsonl at 1x speed).
-# If ST1008 events are absent, the API remaps the primary CCTV event stream
-# into ST1008 with unique event IDs and visitor IDs for the two-store demo.
+# Trigger simulation (replays data/events.jsonl at 1x speed)
 curl -X POST "http://localhost:8000/simulation/start?speed=1.0&cam_id=CAM_1"
 
 # Speed it up without restarting
@@ -239,8 +227,7 @@ store-intelligence/
 │   ├── src/
 │   │   ├── App.tsx            # Main React app + routing
 │   │   ├── hooks/useStoreSSE.ts  # SSE hook with exponential backoff reconnect
-│   │   ├── data/brigadeFloorPlan.ts # Brigade Road fixtures + spatial zone model
-│   │   └── components/        # KPI cards, graph suites, floor map, event feed, camera UI
+│   │   └── components/        # MetricCard, FunnelChart, HeatmapChart, AnomaliesLog, etc.
 │   ├── vite.config.ts         # Reads VITE_API_URL for Railway/Vercel
 │   └── vercel.json            # Vercel deployment config
 ├── tests/
@@ -306,47 +293,17 @@ CCTV Clips (MP4)
 
 ---
 
-## Live Spatial Planogram Intelligence
+## Live Dashboard Features (Part E)
 
-The React dashboard also uses the Brigade Road store layout workbook supplied with the dataset. The workbook embeds the actual floor layout as an image, including brand bays such as EB Korean, The Face Shop, Good Vibes, DermDoc, Minimalist, Aqualogica, Lakme Skin, Maybelline, Faces Canada, Lakme, Colorbar + Sugar, Swiss Beauty, Renee / NY Bae, Alps Goodness, Streax, Accessories, PMU, and the cash counter.
+The React Command Center at **http://localhost:3000** (or your Vercel URL) shows:
 
-Those placements are surfaced in the **Live Spatial Floor Map** inside the **Live Operations** view, next to the CCTV event feed. It is intentionally not on the KPI dashboard: the dashboard stays scan-first, while operations gets the real-time floor-control workflow.
-
-The feature adds:
-
-- A planogram-style map with top and bottom wall fixtures, center makeup/nail islands, cash counter, PMU, queue lane, and entry threshold.
-- Live zone pressure from visit count, dwell, and queue depth.
-- Fixture ranking that translates zone-level attention into brand bay priorities.
-- A next-best-move cue for staff, especially when checkout pressure should override browse-zone assistance.
-- Traffic layer ranking so the event feed can be interpreted spatially, not only chronologically.
-
----
-
-## React Command Center Layout
-
-The React Command Center at **http://localhost:3000** (or your Vercel URL) is split by workflow so screens do not repeat the same content:
-
-- **Live Dashboard**: executive KPI scan, 5 real-time winning feature cards, conversion funnel, brand attention summary, queue, and model confidence.
-- **Journey Analytics**: graph-heavy analysis with traffic mix pie chart, dwell momentum bars, conversion gauge, shopper outcome waterfall, and queue/engagement risk matrix.
-- **Live Operations**: event feed, animated floor map with moving people dots, all-brand attention grid, operations actions, anomalies, and confidence monitoring.
-- **Vision Center**: CCTV playback, YOLO stream controls, and camera telemetry.
-- **Store Comparison**: multi-store performance table and network insight cards.
-
-## Five Winning Real-Time Features
-
-- **Conversion Pulse**: live conversion card with session movement.
-- **Queue Rescue**: queue pressure score that highlights when billing needs intervention.
-- **Zone Magnet**: top live attention zone derived from dwell and visits.
-- **Alert Heat**: active anomaly pressure surfaced as a manager-ready card.
-- **Coverage Live**: number of active shopper zones, useful for seeing whether the floor is evenly covered.
-
-## Visual Analytics Added
-
-- **Traffic Mix Pie**: zone visit share as a pie/donut chart.
-- **Dwell Momentum Bars**: ranked dwell bars for top zones.
-- **Conversion Gauge**: circular gauge with live lift against the current session start.
-- **Risk Matrix**: queue pressure vs engagement plot.
-- **Shopper Outcome Waterfall**: entered, engaged, queued, and lost shopper flow.
+- 🔴 **Live connection indicator** — SSE connection status with exponential backoff reconnect
+- 📊 **Real-time KPI cards** — unique visitors, conversion rate, queue depth, abandonment rate — with delta badges showing per-update changes
+- 🔽 **Conversion funnel SVG chart** — live drop-off percentages at each stage
+- 🌡️ **Zone heatmap** — zone visit frequency with normalised intensity
+- 🚨 **Anomaly log** — colour-coded alerts with `suggested_action` strings
+- 📹 **Camera feed viewer** — browser-native video player for CCTV clips via HTTP range requests
+- ⏱️ **Simulation controls** — start/stop/speed controls to replay events at 1x–10x speed
 
 Updates appear within **< 100ms** of events hitting `/events/ingest`.
 

@@ -37,6 +37,10 @@ The Live Spatial Floor Map is intentionally placed in **Live Operations**, not t
 
 The Brigade Road fixture model lives in `src/data/brigadeFloorPlan.ts`, while the rendering/scoring logic lives in `src/components/BrandMerchandisingMap.tsx`.
 
+## Camera Deployment
+
+The full CCTV recordings are too large to bundle with the Render backend by default. For Vercel demos, `public/cameras/` contains short compressed clips generated from the actual CCTV files. Vision Center uses backend `/cameras/stream/{cam_id}` when full recordings exist, and falls back to these real preview clips when Render has no uploaded recordings, so all five cameras stay clickable and visually distinct.
+
 ## Local Development
 
 ```bash

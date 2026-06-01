@@ -2035,6 +2035,7 @@ body::before {
 .cam-no-signal p { font-size: 0.78rem; font-weight: 500; }
 
 .cam-thumb-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; }
+.cam-thumb-grid.compact { gap: 8px; }
 
 .cam-thumb {
   background: none; border: 1px solid var(--border-light); border-radius: var(--r-sm);
@@ -2043,9 +2044,10 @@ body::before {
   display: flex; flex-direction: column; text-align: left;
 }
 
-.cam-thumb:hover:not(.offline) { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.cam-thumb:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .cam-thumb.active { border-color: var(--violet-500); box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15); }
 .cam-thumb.offline { opacity: 0.4; cursor: not-allowed; }
+.cam-thumb.preview { opacity: 1; }
 
 .cam-thumb-inner { width: 100%; aspect-ratio: 16/9; overflow: hidden; background: #0f0715; position: relative; }
 .cam-thumb-video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
@@ -2065,6 +2067,7 @@ body::before {
 .cam-thumb-status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .cam-thumb-status-dot.online  { background: var(--emerald-500); }
 .cam-thumb-status-dot.offline { background: var(--text-dim); }
+.cam-thumb-status-dot.preview { background: var(--sky-500); }
 
 .footage-detail-panel {
   border: 1px solid var(--border-light);
@@ -2084,8 +2087,8 @@ body::before {
 }
 
 .footage-detail-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .footage-detail-row {
@@ -2155,6 +2158,12 @@ body::before {
   border: 1px solid var(--border-faint);
 }
 
+.footage-detail-state.preview {
+  color: #0369a1;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+}
+
 .cam-loading {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; padding: 60px; color: var(--text-muted); font-size: 0.78rem; font-weight: 500;
@@ -2204,11 +2213,11 @@ body::before {
 .speed-btn:hover { background: var(--bg-surface-alt); color: var(--violet-600); border-color: var(--border-medium); }
 .speed-btn.active { background: var(--violet-500); border-color: var(--violet-400); color: white; box-shadow: 0 2px 8px rgba(139, 92, 246, 0.25); }
 
-@media (min-width: 1024px) {
-  .cam-display-container { grid-template-columns: 1fr 280px; }
-}
-
 .cam-display-container { display: grid; grid-template-columns: 1fr; gap: 14px; }
+
+@media (min-width: 1024px) {
+  .cam-display-container { grid-template-columns: minmax(0, 1fr) 280px; }
+}
 
 .cam-telemetry-sidebar {
   display: flex; flex-direction: column; gap: 14px;
