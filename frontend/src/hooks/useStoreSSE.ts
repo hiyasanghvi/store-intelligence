@@ -64,7 +64,7 @@ export interface MetricDeltas {
 const MAX_HISTORY = 20;
 const DEFAULT_STORE_IDS = ['STORE_BLR_002', 'ST1008'];
 
-// Use __API_URL__ injected by Vite's define config for production builds (Railway/Vercel).
+// Use __API_URL__ injected by Vite's define config for production builds (Render/Vercel).
 declare const __API_URL__: string;
 
 export function getApiUrl(): string {
@@ -75,7 +75,7 @@ export function getApiUrl(): string {
   } else if (typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname;
     if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') {
-      url = 'https://purplle-tech-challenge-production.up.railway.app';
+      url = 'https://store-intelligence.onrender.com';
     }
   }
 

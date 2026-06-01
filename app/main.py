@@ -61,6 +61,10 @@ def resolve_video_dir() -> Path:
 # Path to the directory containing the CCTV video files.
 # Override with VIDEO_DIR when deploying or when clips live elsewhere.
 VIDEO_DIR = resolve_video_dir()
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app",
+).rstrip("/")
 
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 
@@ -642,7 +646,7 @@ async def list_cameras():
             "available": True,
             "has_recording": has_recording,
             "source": "backend_recording" if has_recording else "frontend_preview",
-            "preview_url": f"/cameras/{cam_id}.webm",
+            "preview_url": f"{FRONTEND_URL}/cameras/{cam_id}.webm",
             "stream_url": f"/cameras/stream/{cam_id}",
         })
     return {"cameras": cameras}

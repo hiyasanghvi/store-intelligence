@@ -171,6 +171,7 @@ Render can deploy the FastAPI backend directly from your Git repo.
    |----------|-------|
    | `DATABASE_URL` | `sqlite:///./data/store_intelligence.db` |
    | `POS_CSV_PATH` | `data/pos_transactions.csv` |
+   | `FRONTEND_URL` | `https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app` |
    | `VIDEO_DIR` | optional path if full CCTV recordings are uploaded to Render persistent disk |
 
    > Render automatically sets `PORT`. The Dockerfile/start command reads it at runtime.

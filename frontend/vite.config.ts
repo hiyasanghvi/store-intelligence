@@ -3,12 +3,12 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 // VITE_API_URL — set this in Vercel environment variables to your Railway backend URL.
-// e.g. https://apex-store-intelligence.railway.app
+// e.g. https://store-intelligence.onrender.com
 export default defineConfig({
   plugins: [react()],
   define: {
     // Expose the env var to the browser bundle
-    __API_URL__: JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000'),
+    __API_URL__: JSON.stringify(process.env.VITE_API_URL || 'https://store-intelligence.onrender.com'),
   },
   server: {
     proxy: {

@@ -194,7 +194,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
                 <span className="footage-detail-copy">
                   <strong>{label}</strong>
                   <small>
-                    Clip: {cam.cam_id}.webm · Type: {CAM_TYPES[cam.cam_id]} · Overlays: {CAM_ZONE_COUNT[cam.cam_id] ?? 0}
+                    Clip: {cam.cam_id}.webm - Type: {CAM_TYPES[cam.cam_id]} - Overlays: {CAM_ZONE_COUNT[cam.cam_id] ?? 0}
                   </small>
                 </span>
                 <span className="footage-detail-state online">Actual</span>
