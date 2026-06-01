@@ -61,12 +61,20 @@ def resolve_video_dir() -> Path:
 # Path to the directory containing the CCTV video files.
 # Override with VIDEO_DIR when deploying or when clips live elsewhere.
 VIDEO_DIR = resolve_video_dir()
+YOLO_CONFIG_DIR = Path(os.getenv("YOLO_CONFIG_DIR", "data/ultralytics")).resolve()
+YOLO_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["YOLO_CONFIG_DIR"] = str(YOLO_CONFIG_DIR)
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app",
 ).rstrip("/")
 
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL", "yolov8n.pt")
+YOLO_CONF_THRESHOLD = float(os.getenv("YOLO_CONF_THRESHOLD", "0.25"))
+YOLO_IOU_THRESHOLD = float(os.getenv("YOLO_IOU_THRESHOLD", "0.45"))
+PERSON_CLASS_ID = 0
+FRAME_STRIDE = max(1, int(os.getenv("YOLO_FRAME_STRIDE", "2")))
 
 # Mapping of camera IDs (used in URLs) to filenames. These preserve the
 # challenge's original camera labels while still allowing extra recordings.
@@ -119,6 +127,29 @@ def get_camera_registry() -> dict:
     global CAMERA_REGISTRY
     CAMERA_REGISTRY = build_camera_registry()
     return CAMERA_REGISTRY
+
+
+def resolve_camera_video_path(cam_id: str, filename: Optional[str]) -> tuple[Optional[Path], str]:
+    """Resolve the best local recording path for a camera.
+
+    Full challenge MP4s can live in VIDEO_DIR. Deployed/local demos also include
+    compressed real CCTV clips under frontend/public/cameras, which are good
+    enough for live YOLO streaming when the full recordings are unavailable.
+    """
+    candidates: list[Path] = []
+    if filename:
+        candidates.append(VIDEO_DIR / filename)
+    candidates.extend([
+        VIDEO_DIR / f"{cam_id.upper()}.webm",
+        Path("frontend/public/cameras") / f"{cam_id.upper()}.webm",
+        Path("frontend/public/cameras") / f"{cam_id.lower()}.webm",
+    ])
+
+    for candidate in candidates:
+        if candidate.exists():
+            source = "backend_recording" if candidate.parent == VIDEO_DIR else "bundled_preview"
+            return candidate.resolve(), source
+    return None, "missing"
 
 
 def apply_camera_display_override(cam_id: str, cam_info: dict) -> dict:
@@ -633,19 +664,19 @@ async def list_cameras():
     cameras = []
     registry = get_camera_registry()
     for cam_id, filename in registry.items():
-        video_path = VIDEO_DIR / filename
+        video_path, source = resolve_camera_video_path(cam_id, filename)
         cam_info = apply_camera_display_override(cam_id, get_zones_for_cam(cam_id))
-        has_recording = video_path.exists()
+        has_recording = video_path is not None
         cameras.append({
             "cam_id": cam_id,
-            "name": cam_info.get("description") or video_path.stem,
+            "name": cam_info.get("description") or (video_path.stem if video_path else Path(filename).stem),
             "filename": filename,
             "type": cam_info.get("type", "recording"),
-            "description": cam_info.get("description", video_path.stem),
+            "description": cam_info.get("description", video_path.stem if video_path else Path(filename).stem),
             "zones": cam_info.get("zones", {}),
             "available": True,
             "has_recording": has_recording,
-            "source": "backend_recording" if has_recording else "frontend_preview",
+            "source": source,
             "preview_url": f"{FRONTEND_URL}/cameras/{cam_id}.webm",
             "stream_url": f"/cameras/stream/{cam_id}",
         })
@@ -666,17 +697,18 @@ async def stream_video(cam_id: str):
             detail=f"Camera '{cam_id}' not found. Available: {list(registry.keys())}"
         )
 
-    video_path = VIDEO_DIR / filename
-    if not video_path.exists():
+    video_path, _ = resolve_camera_video_path(cam_id, filename)
+    if not video_path:
         raise HTTPException(
             status_code=404,
-            detail=f"Video file '{filename}' not found. Check VIDEO_DIR (current: {VIDEO_DIR})."
+            detail=f"Video file '{filename}' not found. Check VIDEO_DIR (current: {VIDEO_DIR}) or bundled camera previews."
         )
 
+    media_type = "video/webm" if video_path.suffix.lower() == ".webm" else "video/mp4"
     return FileResponse(
         video_path,
-        media_type="video/mp4",
-        filename=filename,
+        media_type=media_type,
+        filename=video_path.name,
         headers={
             "Cache-Control": "public, max-age=3600",
             "Accept-Ranges": "bytes",
@@ -710,6 +742,81 @@ def get_zones_for_cam(cam_id: str) -> dict:
 
 # Global in-memory telemetry cache
 yolo_stats = {}
+_yolo_bundle = None
+_yolo_load_error: Optional[str] = None
+
+_TRACK_PALETTE = [
+    (255, 80, 80), (80, 255, 80), (80, 80, 255), (255, 255, 80),
+    (255, 80, 255), (80, 255, 255), (255, 160, 80), (80, 160, 255),
+    (160, 255, 80), (255, 80, 160), (160, 80, 255), (80, 255, 160),
+]
+
+
+def get_track_color(track_id: int):
+    return _TRACK_PALETTE[int(track_id) % len(_TRACK_PALETTE)]
+
+
+def get_yolo_bundle():
+    """Load YOLO lazily so normal API startup stays fast."""
+    global _yolo_bundle, _yolo_load_error
+    if _yolo_bundle is not None:
+        return _yolo_bundle
+    if _yolo_load_error:
+        return None
+    try:
+        import torch
+        from ultralytics import YOLO
+        import supervision as sv
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        log.info(f"Loading YOLO model ({YOLO_MODEL_PATH}) on device='{device}'...")
+        model = YOLO(YOLO_MODEL_PATH)
+        model.to(device)
+        _yolo_bundle = {"model": model, "device": device, "supervision": sv}
+        return _yolo_bundle
+    except Exception as exc:
+        _yolo_load_error = str(exc)
+        log.warning(f"YOLO stream disabled: {exc}")
+        return None
+
+
+def make_tracker(bundle):
+    if not bundle:
+        return None
+    try:
+        return bundle["supervision"].ByteTrack()
+    except Exception as exc:
+        log.warning(f"ByteTrack unavailable, drawing raw YOLO detections only: {exc}")
+        return None
+
+
+def draw_yolo_detections(frame, detections):
+    import cv2
+
+    if detections is None or len(detections) == 0:
+        return
+    for i in range(len(detections)):
+        x1, y1, x2, y2 = map(int, detections.xyxy[i])
+        track_id = int(detections.tracker_id[i]) if detections.tracker_id is not None else i
+        conf = float(detections.confidence[i]) if detections.confidence is not None else 1.0
+        color = get_track_color(track_id)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+        label = f"ID:{track_id} {conf:.0%}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)
+        label_y = max(y1 - th - 8, 48)
+        cv2.rectangle(frame, (x1, label_y), (x1 + tw + 8, label_y + th + 8), color, -1)
+        cv2.putText(frame, label, (x1 + 4, label_y + th + 2), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 1, cv2.LINE_AA)
+        cv2.circle(frame, ((x1 + x2) // 2, y2), 5, color, -1, cv2.LINE_AA)
+
+
+def resize_for_stream(frame, target_w: int = 800):
+    import cv2
+
+    h, w = frame.shape[:2]
+    if w <= target_w:
+        return frame
+    scale = target_w / w
+    return cv2.resize(frame, (target_w, int(h * scale)), interpolation=cv2.INTER_AREA)
 
 async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
     import numpy as np
@@ -722,9 +829,14 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
     
     registry = get_camera_registry()
     video_filename = registry.get(cam_id.upper())
-    video_path = VIDEO_DIR / video_filename if video_filename else None
+    video_path, video_source = resolve_camera_video_path(cam_id, video_filename)
+    yolo_bundle = get_yolo_bundle()
+    tracker = make_tracker(yolo_bundle)
+    yolo_ready = yolo_bundle is not None
+    last_detections = None
+
     def open_capture():
-        if video_path and video_path.exists():
+        if video_path:
             opened = cv2.VideoCapture(str(video_path))
             if opened.isOpened():
                 return opened
@@ -760,9 +872,9 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
 
                 if ret and raw_frame is not None:
                     last_frame = raw_frame.copy()
-                    frame = cv2.resize(raw_frame, (w, h))
+                    frame = resize_for_stream(raw_frame)
             elif last_frame is not None:
-                frame = cv2.resize(last_frame, (w, h))
+                frame = resize_for_stream(last_frame)
             else:
                 cap = open_capture()
                 if cap:
@@ -770,7 +882,7 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
                     ret, raw_frame = cap.read()
                     if ret and raw_frame is not None:
                         last_frame = raw_frame.copy()
-                        frame = cv2.resize(raw_frame, (w, h))
+                        frame = resize_for_stream(raw_frame)
 
             if frame is None:
                 # Create slate dark background (BGR) if no video
@@ -781,7 +893,38 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
                     cv2.line(frame, (grid_x, 0), (grid_x, 480), (32, 24, 24), 1)
                 for grid_y in range(0, 480, 40):
                     cv2.line(frame, (0, grid_y), (640, grid_y), (32, 24, 24), 1)
-                
+
+            h, w = frame.shape[:2]
+            n_people = 0
+            if yolo_ready and frame_no % FRAME_STRIDE == 0:
+                try:
+                    results = yolo_bundle["model"](
+                        frame,
+                        conf=YOLO_CONF_THRESHOLD,
+                        iou=YOLO_IOU_THRESHOLD,
+                        classes=[PERSON_CLASS_ID],
+                        verbose=False,
+                        device=yolo_bundle["device"],
+                    )[0]
+                    detections = yolo_bundle["supervision"].Detections.from_ultralytics(results)
+                    if tracker is not None:
+                        detections = tracker.update_with_detections(detections)
+                    last_detections = detections
+                except Exception as exc:
+                    yolo_ready = False
+                    yolo_stats[cam_id.upper()] = {
+                        "people": 0,
+                        "frame": frame_no,
+                        "fps": fps,
+                        "source": video_source,
+                        "yolo": "error",
+                        "error": str(exc),
+                    }
+                    log.warning(f"YOLO inference failed for {cam_id}: {exc}")
+
+            if last_detections is not None:
+                n_people = len(last_detections)
+
             # Draw zones
             overlay = frame.copy()
             for zone_name, zone_def in zones.items():
@@ -836,6 +979,8 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
                 cv2.line(frame, (0, y), (w, y), (0, 255, 200), 2, cv2.LINE_AA)
                 cv2.putText(frame, "ENTRY LINE", (15, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 200), 1, cv2.LINE_AA)
 
+            draw_yolo_detections(frame, last_detections)
+
             # Draw HUD
             cv2.rectangle(frame, (0, 0), (w, 44), (10, 10, 15), -1)
             cv2.rectangle(frame, (0, 44), (w, 45), (40, 40, 45), -1)
@@ -851,14 +996,13 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
             (tw2, _), _ = cv2.getTextSize(fc_str, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
             cv2.putText(frame, fc_str, (w - tw2 - 10, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (80, 140, 80), 1, cv2.LINE_AA)
             
-            n_people = 0
             badge_txt = f"  YOLO: {n_people} person{'s' if n_people != 1 else ''}  "
-            badge_color = (0, 180, 255)
+            badge_color = (0, 180, 255) if yolo_ready else (80, 80, 255)
             (btw, bth), _ = cv2.getTextSize(badge_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
             cv2.rectangle(frame, (0, h - bth - 16), (btw + 8, h), (15, 15, 20), -1)
             cv2.putText(frame, badge_txt, (4, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, badge_color, 1, cv2.LINE_AA)
             
-            live_txt = " ● YOLO v8n "
+            live_txt = " LIVE YOLO v8n " if yolo_ready else " YOLO UNAVAILABLE "
             (ltw, _), _ = cv2.getTextSize(live_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)
             cv2.rectangle(frame, (w - ltw - 8, h - 28), (w, h), (40, 0, 0), -1)
             cv2.putText(frame, live_txt, (w - ltw - 4, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (80, 80, 255), 1, cv2.LINE_AA)
@@ -867,7 +1011,9 @@ async def generate_mjpeg_stream(cam_id: str, speed: float = 1.0):
             yolo_stats[cam_id.upper()] = {
                 "people": n_people,
                 "frame": frame_no,
-                "fps": fps
+                "fps": fps,
+                "source": video_source,
+                "yolo": "live" if yolo_ready else "unavailable",
             }
             
             ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 82])

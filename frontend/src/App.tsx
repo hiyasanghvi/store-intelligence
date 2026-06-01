@@ -401,6 +401,7 @@ export const App: React.FC = () => {
           <div className={`conn-badge ${connectionStatus}`}>
             <div className="conn-dot" />
             {connectionStatus === 'live'         && 'SSE Live'}
+            {connectionStatus === 'polling'      && 'API Live'}
             {connectionStatus === 'connecting'   && 'Connecting...'}
             {connectionStatus === 'error'        && 'Reconnecting'}
             {connectionStatus === 'disconnected' && 'Offline'}

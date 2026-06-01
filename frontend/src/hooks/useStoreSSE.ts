@@ -44,7 +44,7 @@ export interface SSEUpdateMessage {
   data: StoreMetrics;
 }
 
-export type ConnectionStatus = 'connecting' | 'live' | 'disconnected' | 'error';
+export type ConnectionStatus = 'connecting' | 'live' | 'polling' | 'disconnected' | 'error';
 
 export interface MetricHistory {
   unique_visitors: number[];
@@ -70,13 +70,18 @@ declare const __API_URL__: string;
 export function getApiUrl(): string {
   let url = 'http://localhost:8000';
 
-  if (typeof __API_URL__ !== 'undefined' && __API_URL__ !== 'http://localhost:8000' && __API_URL__ !== '') {
-    url = __API_URL__;
-  } else if (typeof window !== 'undefined' && window.location) {
+  if (typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') {
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+    if (isLocal) {
+      url = 'http://localhost:8000';
+    } else if (typeof __API_URL__ !== 'undefined' && __API_URL__ !== '') {
+      url = __API_URL__;
+    } else {
       url = 'https://store-intelligence.onrender.com';
     }
+  } else if (typeof __API_URL__ !== 'undefined' && __API_URL__ !== '') {
+    url = __API_URL__;
   }
 
   url = url.trim().replace(/\/$/, '');
@@ -212,6 +217,7 @@ export function useStoreSSE(apiUrl: string = _DEFAULT_API_URL, storeIds: string[
           if (resp.ok && active) {
             const data = await resp.json();
             applyMetricsUpdate(storeId, data);
+            setConnectionStatus((status) => (status === 'live' ? status : 'polling'));
           }
         } catch {
           // ignore poll errors

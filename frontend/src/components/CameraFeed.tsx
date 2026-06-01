@@ -8,6 +8,9 @@ interface Camera {
   description?: string;
   zones?: Record<string, unknown>;
   has_recording?: boolean;
+  source?: string;
+  stream_url?: string;
+  preview_url?: string;
 }
 
 interface CameraFeedProps {
@@ -45,6 +48,12 @@ function previewSrc(camId: string) {
   return `/cameras/${camId}.webm`;
 }
 
+function yoloStreamSrc(apiBase: string, cam: Camera | undefined, camId: string) {
+  const streamPath = cam?.stream_url ?? `/cameras/stream/${camId}`;
+  if (/^https?:\/\//i.test(streamPath)) return streamPath;
+  return `${apiBase}${streamPath.startsWith('/') ? streamPath : `/${streamPath}`}`;
+}
+
 export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [selected, setSelected] = useState('CAM_1');
@@ -54,7 +63,10 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
   useEffect(() => {
     let active = true;
-    fetch(`${apiBase}/cameras`)
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+
+    fetch(`${apiBase}/cameras`, { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
         if (!active) return;
@@ -67,11 +79,14 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         setCameras(CAMERA_IDS.map((id) => ({ cam_id: id, name: CAM_LABELS[id] })));
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (active) setLoading(false);
       });
 
     return () => {
       active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [apiBase]);
 
@@ -90,6 +105,12 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
   const selectedId = selectedCamera?.cam_id ?? selected;
   const selectedLabel = CAM_LABELS[selectedId] ?? selectedCamera?.description ?? selectedCamera?.name ?? selectedId;
+  const streamSrc = yoloStreamSrc(apiBase, selectedCamera, selectedId);
+  const sourceLabel = selectedCamera?.source === 'backend_recording'
+    ? 'Full recording'
+    : selectedCamera?.source === 'bundled_preview'
+      ? 'Bundled CCTV clip'
+      : 'YOLO stream';
 
   if (loading) {
     return (
@@ -105,11 +126,11 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
       <div className="cam-control-header compact">
         <div className="cam-title-badge">
           <span className="ai-badge-dot" />
-          <span className="ai-badge-text">REAL CCTV RECORDINGS</span>
+          <span className="ai-badge-text">LIVE YOLO CCTV</span>
         </div>
         <div className="cam-speed-selector">
           <span className="speed-label">Source:</span>
-          <span className="speed-btn active">Vercel bundled preview</span>
+          <span className="speed-btn active">{sourceLabel}</span>
         </div>
       </div>
 
@@ -117,17 +138,25 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         <div className="cam-video-wrap">
           <div className="cam-overlay-badge live local">
             <span className="cam-live-dot green-pulse" />
-            REAL CCTV PREVIEW
+            YOLO DETECTION LIVE
           </div>
           <div className="cam-overlay-label">
             <span className="cam-overlay-icon">REC</span>
             {selectedLabel}
-            <span className="cam-overlay-zone">Actual Footage</span>
+            <span className="cam-overlay-zone">Person boxes + zones</span>
           </div>
 
           {!streamError ? (
-            <video
+            <img
               key={selectedId}
+              src={streamSrc}
+              className="cam-video-el img-stream"
+              alt={`${selectedLabel} YOLO detection stream`}
+              onError={() => setStreamError(true)}
+            />
+          ) : (
+            <video
+              key={`${selectedId}-preview`}
               src={previewSrc(selectedId)}
               className="cam-video-el img-stream"
               autoPlay
@@ -135,15 +164,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
               loop
               playsInline
               controls
-              onError={() => setStreamError(true)}
             />
-          ) : (
-            <div className="cam-no-signal">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-              </svg>
-              <p>Preview clip missing for {selectedId}. Redeploy Vercel with `frontend/public/cameras/{selectedId}.webm`.</p>
-            </div>
           )}
         </div>
       </div>
@@ -194,10 +215,10 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
                 <span className="footage-detail-copy">
                   <strong>{label}</strong>
                   <small>
-                    Clip: {cam.cam_id}.webm - Type: {CAM_TYPES[cam.cam_id]} - Overlays: {CAM_ZONE_COUNT[cam.cam_id] ?? 0}
+                    YOLO: /cameras/stream/{cam.cam_id} - Type: {CAM_TYPES[cam.cam_id]} - Zones: {CAM_ZONE_COUNT[cam.cam_id] ?? 0}
                   </small>
                 </span>
-                <span className="footage-detail-state online">Actual</span>
+                <span className="footage-detail-state online">YOLO</span>
               </button>
             );
           })}

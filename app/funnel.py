@@ -26,10 +26,10 @@ log = logging.getLogger(__name__)
 def _build_funnel_stage_name(stage_key: str) -> str:
 
     stage_map = {
-        "ENTRY": "Store Entry",
-        "DISCOVERY": "Product Discovery",
-        "INTENT": "Purchase Intent",
-        "PURCHASE": "Transaction Completion",
+        "ENTRY": "Entry",
+        "DISCOVERY": "Zone Visit",
+        "INTENT": "Billing Queue",
+        "PURCHASE": "Purchase",
     }
 
     return stage_map.get(stage_key, stage_key)

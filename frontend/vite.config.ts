@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [react()],
   define: {
     // Expose the env var to the browser bundle
-    __API_URL__: JSON.stringify(process.env.VITE_API_URL || 'https://store-intelligence.onrender.com'),
+    __API_URL__: JSON.stringify(process.env.VITE_API_URL || ''),
   },
   server: {
     proxy: {

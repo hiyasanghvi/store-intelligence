@@ -280,7 +280,8 @@ body::before {
   letter-spacing: 0.05em;
 }
 
-.conn-badge.live {
+.conn-badge.live,
+.conn-badge.polling {
   background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.2);
   color: #065f46;
@@ -305,7 +306,8 @@ body::before {
   flex-shrink: 0;
 }
 
-.conn-badge.live .conn-dot {
+.conn-badge.live .conn-dot,
+.conn-badge.polling .conn-dot {
   background: var(--emerald-500);
   box-shadow: 0 0 6px var(--emerald-500);
   animation: breathe 2s ease-in-out infinite;

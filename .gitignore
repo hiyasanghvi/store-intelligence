@@ -30,6 +30,7 @@ data/store_intelligence.db
 
 # YOLO weights — large binary files, auto-downloaded on first run by ultralytics
 *.pt
+data/ultralytics/
 
 # Logs
 *.log
