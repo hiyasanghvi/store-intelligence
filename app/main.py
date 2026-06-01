@@ -642,7 +642,7 @@ async def list_cameras():
             "available": True,
             "has_recording": has_recording,
             "source": "backend_recording" if has_recording else "frontend_preview",
-            "preview_url": f"/cameras/{cam_id}.mp4",
+            "preview_url": f"/cameras/{cam_id}.webm",
             "stream_url": f"/cameras/stream/{cam_id}",
         })
     return {"cameras": cameras}
