@@ -106,8 +106,8 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const [streamKey, setStreamKey] = useState(Date.now());
   
   const [yoloBase, setYoloBase] = useState(() => {
-    return localStorage.getItem('yolo_base_url') || 'http://localhost:8001';
-  });
+  return import.meta.env.VITE_API_URL || apiBase;
+});
 
   const [streamError, setStreamError] = useState(false);
   void storeId;
@@ -252,12 +252,10 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
     : '';
   const yoloCamId = yoloStats?.cam_id?.toUpperCase();
   const selectedCamId = selected?.toUpperCase();
-  const useLocalYoloStream = Boolean(yoloOnline && selectedCamId && yoloCamId === selectedCamId && !switching);
+  const useLocalYoloStream = false;
   const streamSrc = selected
-    ? useLocalYoloStream
-      ? `${yoloBase}/stream?cam=${selected}&t=${streamKey}`
-      : `${apiBase}/cameras/stream/${selected}?speed=${speed}&t=${streamKey}`
-    : '';
+  ? `${apiBase}/cameras/stream/${selected}?speed=${speed}&t=${streamKey}`
+  : '';
 
   if (loading) {
     return (
