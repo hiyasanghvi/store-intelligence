@@ -1,347 +1,189 @@
-# Apex Retail Store Intelligence
+# Apex Store Intelligence
 
-> **End-to-end CCTV → Analytics pipeline for physical retail stores.**
-> From raw camera footage to a live, queryable REST API — and a real-time React Command Center.
+APEX turns ordinary retail CCTV into an operating system for store teams: visitor journeys, zone dwell, queue pressure, conversion leakage, staff-ready alerts, and camera evidence in one live command center.
 
----
+This is not a footfall counter. It is a CCTV-to-decision pipeline that connects computer vision events with POS transactions and renders the result as an actionable retail intelligence product.
 
-## Live Deployments
+## Live Product
 
-| Service | URL |
+| Surface | URL |
 |---------|-----|
-| **Backend API** | `https://store-intelligence.onrender.com` |
-| **Live Dashboard** | `https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app/` |
-| **Swagger UI** | `https://store-intelligence.onrender.com/docs` |
-| **Built-in Dashboard** | `https://store-intelligence.onrender.com/dashboard` |
+| React Command Center | https://storeintelligence.vercel.app |
+| Backend API | https://store-intelligence-prr3.onrender.com |
+| Swagger Docs | https://store-intelligence-prr3.onrender.com/docs |
+| Built-in SSE Dashboard | https://store-intelligence-prr3.onrender.com/dashboard |
 
----
+## What Makes It Different
 
-## Quick Start — Local (5 Commands)
+- **Journey intelligence, not just counting**: tracks Entry -> Zone Visit -> Billing Queue -> Purchase so managers can see where shoppers drop off.
+- **POS-aware conversion**: correlates billing-zone presence with POS timestamps, which is more defensible than a naive transactions divided by visitors ratio.
+- **Staff exclusion**: detects likely staff using long-duration tracks and torso HSV color signatures, keeping customer metrics clean.
+- **Re-entry protection**: torso-color Re-ID reduces double counting when a visitor exits and returns or appears across nearby cameras.
+- **Privacy-first tracking**: no facial recognition, no identity storage, no PII. The system uses anonymous track IDs, bounding boxes, zones, and timestamps.
+- **Actionable anomaly layer**: queue spikes, dead zones, conversion drops, and stale camera feeds return severity plus a suggested action.
+- **Vision Center with deployment-safe camera proof**: localhost can show real YOLO MJPEG streams; Previous Recording mode lets reviewers scrub bundled CCTV clips with privacy-safe person overlays; Vercel still shows boxes, zones, camera switching, and detection context without requiring raw MP4 hosting.
+- **Manager workflow UI**: separate views for executive dashboard, journey analytics, vision review, live operations, and store comparison instead of repeating the same cards everywhere.
+- **Focused decision deck**: the dashboard keeps only high-value signals, with explanations and next actions instead of a noisy feature list.
+- **Original funnel visual**: the funnel API remains Entry -> Zone Visit -> Billing Queue -> Purchase, while the React chart shows retention, per-stage loss, and overall conversion in a journey format.
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/safalsingh1/Purplle-tech-challenge.git store-intelligence && cd store-intelligence
+## Product Modules
 
-# 2. Start the API  
-docker compose up -d
+### 1. Detection Pipeline
 
-# 3. Verify it's running  
-curl http://localhost:8000/health
+The offline/edge pipeline processes CCTV clips and emits structured events:
 
-# 4. Run the detection pipeline against your CCTV clips
-pip install -r requirements.txt
-python run_pipeline.py --clips-dir "path/to/CCTV Footage"
+- YOLOv8 person detection.
+- ByteTrack multi-object tracking.
+- Polygon zone classification from `data/store_layout.json`.
+- Entry/exit line crossing.
+- Billing queue joins and abandons.
+- Staff filtering.
+- Re-entry and cross-camera deduplication.
+- JSONL output and optional live POST to the API.
 
-# 5. Ingest the generated events into the API
-python -c "
-import json, httpx
-events = [json.loads(l) for l in open('data/events.jsonl') if l.strip()]
-for i in range(0, len(events), 500):
-    r = httpx.post('http://localhost:8000/events/ingest', json={'events': events[i:i+500]})
-    print(r.json())
-"
+### 2. Intelligence API
+
+FastAPI receives events, stores them in SQLite, and exposes live analytics:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/events/ingest` | POST | Idempotent event ingestion, up to 500 events per batch |
+| `/stores/{id}/metrics` | GET | visitors, conversion, dwell, queue depth, abandonment |
+| `/stores/{id}/funnel` | GET | Entry -> Zone Visit -> Billing Queue -> Purchase |
+| `/stores/{id}/heatmap` | GET | zone traffic and dwell intensity |
+| `/stores/{id}/anomalies` | GET | operational alerts with suggested actions |
+| `/cameras` | GET | camera metadata and stream paths |
+| `/cameras/stream/{cam_id}` | GET | MJPEG YOLO stream for local/full-recording setups |
+| `/simulation/start` | POST | replay demo events in real time |
+| `/dashboard/stream` | GET | Server-Sent Events feed for live UI updates |
+| `/health` | GET | database and feed freshness status |
+
+### 3. React Command Center
+
+The frontend is a Vite + React app organized around real store jobs:
+
+- **Live Dashboard**: executive scan, KPI cards, six decision signals, narrative recommendation.
+- **Journey Analytics**: traffic mix, dwell momentum, conversion gauge, risk matrix, outcome waterfall.
+- **Vision Center**: camera playback, privacy-safe person overlays, thumbnails, local YOLO stream support, and previous-recording review.
+- **Live Operations**: event feed, spatial floor map, brand attention, anomaly actions.
+- **Store Comparison**: multi-store performance and network-level insights.
+
+## Local Quick Start
+
+Use the repo-level virtual environment if it already exists, or create your own.
+
+```powershell
+cd C:\Users\hiyas\Downloads\Purplle-tech-challenge-master\store-intelligence
+
+# Backend
+..\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Then open **http://localhost:8000/dashboard** for the built-in live dashboard,  
-or run `cd frontend && npm install && npm run dev` to launch the full React Command Center at **http://localhost:3000**.
+In a second terminal:
 
----
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/events/ingest` | POST | Ingest batches of up to 500 detection events (idempotent by `event_id`) |
-| `/stores/{id}/metrics` | GET | Real-time: visitors, conversion rate, dwell per zone, queue depth, abandonment |
-| `/stores/{id}/funnel` | GET | Conversion funnel: Entry → Zone → Billing → Purchase with drop-off % |
-| `/stores/{id}/heatmap` | GET | Zone visit frequency + dwell, normalised 0–100 |
-| `/stores/{id}/anomalies` | GET | Active anomalies with severity (INFO/WARN/CRITICAL) and suggested actions |
-| `/health` | GET | Service health + per-store feed lag status |
-| `/dashboard` | GET | Live HTML dashboard (SSE-based, no JS framework) |
-| `/docs` | GET | Interactive Swagger UI |
-
-**Example store ID**: `STORE_BLR_002`
-
-```bash
-curl http://localhost:8000/stores/STORE_BLR_002/metrics
-curl http://localhost:8000/stores/STORE_BLR_002/funnel
-curl http://localhost:8000/stores/STORE_BLR_002/heatmap
-curl http://localhost:8000/stores/STORE_BLR_002/anomalies
-curl http://localhost:8000/health
+```powershell
+cd C:\Users\hiyas\Downloads\Purplle-tech-challenge-master\store-intelligence\frontend
+npm.cmd install
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
----
+Open:
 
-## Running the Detection Pipeline
+- Frontend: http://127.0.0.1:5173
+- Backend docs: http://127.0.0.1:8000/docs
+- Built-in dashboard: http://127.0.0.1:8000/dashboard
 
-The detection pipeline processes CCTV clips and emits structured events to a JSONL file.
+## Run the Simulation
 
-### Prerequisites
+The included `data/events.jsonl` can replay a full shopper journey without rerunning video inference.
 
-```bash
-pip install -r requirements.txt
-# YOLOv8m weights auto-download on first run (~52 MB)
-# GPU (CUDA) is used if available; falls back to CPU automatically
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/simulation/start?speed=3.0&cam_id=CAM_1"
+curl.exe -X POST "http://127.0.0.1:8000/simulation/speed?speed=5.0"
+curl.exe -X POST "http://127.0.0.1:8000/simulation/stop"
 ```
 
-### Process all clips (batch mode)
+## Run the Detection Pipeline
 
-```bash
-python run_pipeline.py \
-  --clips-dir "path/to/CCTV Footage" \
-  --layout data/store_layout.json \
-  --output data/events.jsonl
+```powershell
+cd C:\Users\hiyas\Downloads\Purplle-tech-challenge-master\store-intelligence
+..\venv\Scripts\python.exe run_pipeline.py --clips-dir "C:\path\to\CCTV Footage" --output data/events.jsonl
 ```
 
-### Stream events to the API in real time (Part E live demo)
+Stream events directly to the API:
 
-```bash
-# Terminal 1: start API
-docker compose up
-
-# Terminal 2: run pipeline and POST each event to the API live
-python run_pipeline.py \
-  --clips-dir "path/to/CCTV Footage" \
-  --api-url http://localhost:8000
-
-# Terminal 3: start the live React dashboard
-cd frontend && npm install && npm run dev
-# Open http://localhost:3000 — metrics update in real time
+```powershell
+..\venv\Scripts\python.exe run_pipeline.py --clips-dir "C:\path\to\CCTV Footage" --api-url http://127.0.0.1:8000
 ```
 
-### Use the built-in simulation (no CCTV clips needed)
+## Camera Behavior
 
-If you don't have the raw clips handy, the pre-generated events can be replayed via the simulation controller:
+| Environment | Behavior |
+|-------------|----------|
+| Localhost | Tries backend YOLO MJPEG stream first; falls back to bundled video if the stream is unavailable |
+| Vercel | Plays real bundled CCTV `.webm` clips with AI overlay boxes and zones for reliable demos |
+| Render backend with MP4s | Can stream full recordings if `VIDEO_DIR` points to uploaded camera files |
 
-```bash
-# Start API
-docker compose up -d
+This keeps the demo reliable while still preserving the real local YOLO path.
 
-# Trigger simulation (replays data/events.jsonl at 1x speed)
-curl -X POST "http://localhost:8000/simulation/start?speed=1.0&cam_id=CAM_1"
+## Test and Build
 
-# Speed it up without restarting
-curl -X POST "http://localhost:8000/simulation/speed?speed=5.0"
+```powershell
+# Backend tests
+..\venv\Scripts\python.exe -m pytest
 
-# Stop it
-curl -X POST http://localhost:8000/simulation/stop
+# Frontend build
+cd frontend
+npm.cmd run build
 ```
 
----
+Current verification: **140 backend tests pass** and the frontend production build passes.
 
-## Running Tests
+## Deployment
 
-```bash
-# From the store-intelligence directory
-pytest tests/ -v --cov=app --cov=pipeline --cov-report=term-missing
+### Render Backend
 
-# Quick run (stop on first failure)
-pytest tests/ -x
+Use `store-intelligence` as the service root.
 
-# Coverage badge values
-pytest --cov=app --cov-report=term | tail -5
-```
+| Setting | Value |
+|---------|-------|
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| `DATABASE_URL` | `sqlite:///./data/store_intelligence.db` |
+| `POS_CSV_PATH` | `data/pos_transactions.csv` |
+| `FRONTEND_URL` | `https://storeintelligence.vercel.app` |
+| `VIDEO_DIR` | optional, only if full MP4s are uploaded |
 
-All **138 tests** pass across 11 test files with **89% coverage** covering ingestion, metrics, funnel, anomalies, pipeline schema, API endpoints, new POS schemas, and dashboard SSE/HTML edge cases.
+Live backend: https://store-intelligence-prr3.onrender.com
 
----
+### Vercel Frontend
 
-## Deploying to Render (Backend)
+Use `frontend` as the root directory.
 
-Render can deploy the FastAPI backend directly from your Git repo.
+| Environment Variable | Value |
+|----------------------|-------|
+| `VITE_API_URL` | `https://store-intelligence-prr3.onrender.com` |
 
-### Steps
-
-1. Push your repo to GitHub (make sure `data/store_intelligence.db` is gitignored but `data/events.jsonl` and `data/pos_transactions.csv` are **committed**).
-
-2. Go to [render.com](https://render.com) → **New** → **Web Service** → connect the Git repo.
-
-3. Set the service root/build context to `store-intelligence` if your repo contains the parent folder.
-
-4. Use the Dockerfile deployment path, or set:
-
-   | Setting | Value |
-   |---------|-------|
-   | Build Command | `pip install -r requirements.txt` |
-   | Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-
-5. Add these **environment variables** in Render's Settings → Environment:
-
-   | Variable | Value |
-   |----------|-------|
-   | `DATABASE_URL` | `sqlite:///./data/store_intelligence.db` |
-   | `POS_CSV_PATH` | `data/pos_transactions.csv` |
-   | `FRONTEND_URL` | `https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app` |
-   | `VIDEO_DIR` | optional path if full CCTV recordings are uploaded to Render persistent disk |
-
-   > Render automatically sets `PORT`. The Dockerfile/start command reads it at runtime.
-
-6. Current backend URL:
-
-   ```text
-   https://store-intelligence.onrender.com
-   ```
-
-7. Test it:
-   ```bash
-   curl https://store-intelligence.onrender.com/health
-   curl https://store-intelligence.onrender.com/stores/STORE_BLR_002/metrics
-   ```
-
-> **Note on CCTV recordings:** The full raw MP4 files are large and are not committed by default. The deployed Vercel frontend includes short real CCTV `.webm` preview clips in `frontend/public/cameras/` so Vision Center still shows actual camera footage. If you want Render to stream the full recordings, upload the MP4 files to Render persistent disk or external object storage and set `VIDEO_DIR`.
-
----
-
-## Deploying to Vercel (Frontend)
-
-1. In `frontend/`, the React app reads `VITE_API_URL` at build time to know where the backend is.
-
-2. Push your repo to GitHub.
-
-3. Go to [vercel.com](https://vercel.com) → **New Project** → import your GitHub repo → set **Root Directory** to `frontend/`.
-
-4. Add this **environment variable** in Vercel → Settings → Environment Variables:
-
-   | Variable | Value |
-   |----------|-------|
-   | `VITE_API_URL` | `https://store-intelligence.onrender.com` |
-
-5. Deploy. Vercel will run `npm run build` and serve the `dist/` folder.
-
-6. Current dashboard URL:
-
-   ```text
-   https://store-intelligence-r7bplai1l-hiyasanghvi1806-2077s-projects.vercel.app/
-   ```
-
-> **CORS:** The backend has `allow_origins=["*"]` enabled so Vercel's domain is automatically allowed.
-
----
+Live frontend: https://storeintelligence.vercel.app
 
 ## Project Structure
 
-```
+```text
 store-intelligence/
-├── pipeline/
-│   ├── detect.py          # Main YOLO + ByteTrack detection loop (CPU/GPU auto-select)
-│   ├── tracker.py         # Re-ID: torso HSV hash, cross-camera dedup, re-entry detection
-│   ├── zone_classifier.py # Polygon ray-casting zone assignment (resolution-agnostic)
-│   ├── staff_detector.py  # HSV colour histogram + duration heuristics for staff exclusion
-│   ├── emit.py            # Event schema (Pydantic) + JSONL writer + real-time POST
-│   └── run.sh             # Shell wrapper for pipeline (Linux/macOS)
-├── app/
-│   ├── main.py            # FastAPI entrypoint + middleware + simulation controller
-│   ├── models.py          # SQLAlchemy ORM + Pydantic API schemas
-│   ├── database.py        # SQLite/SQLAlchemy setup + health check
-│   ├── ingestion.py       # Batch ingest with idempotent dedup (savepoints)
-│   ├── metrics.py         # Real-time metric computation + conversion rate
-│   ├── funnel.py          # 4-stage conversion funnel with session dedup
-│   ├── anomalies.py       # Rule-based anomaly detection (4 anomaly types)
-│   ├── heatmap.py         # Zone heatmap with normalised scores 0–100
-│   ├── health.py          # Health check logic + STALE_FEED detection
-│   └── dashboard.py       # SSE live dashboard + broadcast infrastructure
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx            # Main React app + routing
-│   │   ├── hooks/useStoreSSE.ts  # SSE hook with exponential backoff reconnect
-│   │   └── components/        # MetricCard, FunnelChart, HeatmapChart, AnomaliesLog, etc.
-│   ├── public/cameras/        # Short real CCTV preview clips for deployed Vision Center
-│   ├── vite.config.ts         # Reads VITE_API_URL for Render/Vercel
-│   └── vercel.json            # Vercel deployment config
-├── tests/
-│   ├── conftest.py
-│   ├── test_ingestion.py   # Ingest, idempotency, validation (14 tests)
-│   ├── test_metrics.py     # Metric computation edge cases (13 tests)
-│   ├── test_funnel.py      # Funnel + session deduplication (9 tests)
-│   ├── test_anomalies.py   # Anomaly detection correctness (15 tests)
-│   ├── test_pipeline.py    # Schema compliance, event emission (28 tests)
-│   └── test_additional_coverage.py  # Heatmap, health, dashboard, simulation (17 tests)
-├── data/
-│   ├── store_layout.json   # Zone polygon definitions per camera
-│   ├── pos_transactions.csv # Timestamped POS records (6 transactions in 2-min window)
-│   └── events.jsonl        # Pre-generated 12-visitor 2-minute simulation dataset
-├── docs/
-│   ├── DESIGN.md           # Architecture + AI-assisted decisions
-│   └── CHOICES.md          # 3 key technical decisions with full reasoning
-├── detection_stream.py     # Standalone MJPEG server for live YOLO stream (port 8001)
-├── run_pipeline.py         # Windows-friendly pipeline runner
-├── docker-compose.yml      # One-command startup (Render PORT env var compatible)
-├── Dockerfile              # Multi-stage build (CPU/GPU compatible)
-├── requirements.txt        # All Python dependencies
-└── README.md
+  app/                 FastAPI API, metrics, funnel, heatmap, anomalies, SSE
+  pipeline/            YOLO, ByteTrack, Re-ID, staff detection, zone logic
+  frontend/            React Command Center and bundled camera clips
+  data/                store layout, POS data, replay events
+  tests/               API, pipeline, dashboard, metrics, edge-case tests
+  docs/                product design, technical choices, deck, demo script
+  detection_stream.py  standalone local YOLO MJPEG stream server
+  run_pipeline.py      Windows-friendly pipeline runner
 ```
 
----
+## Documentation
 
-## Architecture Summary
-
-```
-CCTV Clips (MP4)
-     │
-     ▼
-┌─────────────────────────────────────────────┐
-│  Detection Layer (pipeline/)                 │
-│  YOLOv8m (CUDA/CPU) → ByteTrack → Events   │
-│  Staff detection (HSV histogram + duration)  │
-│  Zone classifier (polygon ray-casting)       │
-│  Re-ID tracker (torso HSV hash + time window)│
-└──────────────┬──────────────────────────────┘
-               │ events.jsonl / real-time POST
-               ▼
-┌─────────────────────────────────────────────┐
-│  Intelligence API (FastAPI + SQLite)         │
-│  POST /events/ingest (idempotent, 500/batch) │
-│  GET  /stores/{id}/metrics                   │
-│  GET  /stores/{id}/funnel                    │
-│  GET  /stores/{id}/heatmap                   │
-│  GET  /stores/{id}/anomalies                 │
-│  GET  /health                                │
-└──────────────┬──────────────────────────────┘
-               │ Server-Sent Events (SSE)
-               ▼
-┌─────────────────────────────────────────────┐
-│  Live Dashboard (Part E)                     │
-│  /dashboard — built-in HTML (no framework)  │
-│  localhost:3000 — React + Vite Command Center│
-└─────────────────────────────────────────────┘
-```
-
-**Detailed design decisions** → [docs/DESIGN.md](docs/DESIGN.md)  
-**Key technical choices** → [docs/CHOICES.md](docs/CHOICES.md)
-
----
-
-## Live Dashboard Features (Part E)
-
-The React Command Center at **http://localhost:3000** (or your Vercel URL) shows:
-
-- 🔴 **Live connection indicator** — SSE connection status with exponential backoff reconnect
-- 📊 **Real-time KPI cards** — unique visitors, conversion rate, queue depth, abandonment rate — with delta badges showing per-update changes
-- 🔽 **Conversion funnel SVG chart** — live drop-off percentages at each stage
-- 🌡️ **Zone heatmap** — zone visit frequency with normalised intensity
-- 🚨 **Anomaly log** — colour-coded alerts with `suggested_action` strings
-- 📹 **Camera feed viewer** — browser-native video player using bundled real CCTV preview clips on Vercel, with backend full-recording stream support when MP4s are available
-- ⏱️ **Simulation controls** — start/stop/speed controls to replay events at 1x–10x speed
-
-Updates appear within **< 100ms** of events hitting `/events/ingest`.
-
----
-
-## Edge Cases Handled
-
-| Edge Case | How the System Handles It |
-|-----------|--------------------------|
-| Group entry (2–4 people) | Each ByteTrack bounding box = 1 ENTRY event. YOLOv8m detects individuals in groups. |
-| Staff movement | Dual heuristic: track duration ≥ 65% of clip + torso HSV uniform clustering → `is_staff=true`, excluded from all metrics. |
-| Re-entry | ReIDTracker matches returning visitor by appearance hash within 10-minute window → emits `REENTRY` not a second `ENTRY`. |
-| Partial occlusion | `confidence_threshold=0.20` keeps uncertain detections. Confidence score included in every event — never silently dropped. |
-| Billing queue buildup | Queue depth tracked per `BILLING_QUEUE_JOIN` event. `BILLING_QUEUE_ABANDON` emitted when visitor leaves zone before transaction. |
-| Empty store periods | All metric queries handle zero-visitor state gracefully — no nulls, no crashes. Conversion rate returns `0.0`. |
-| Cross-camera overlap | ReIDTracker's appearance pool matches same visitor across cameras within 30s window using torso HSV hash. |
-
----
-
-## Design Documents
-
-- **[docs/DESIGN.md](docs/DESIGN.md)** — Architecture overview, zone classification design, Re-ID approach, AI-assisted decisions (ByteTrack choice, staff heuristics, conversion window)
-- **[docs/CHOICES.md](docs/CHOICES.md)** — Full reasoning for model selection (YOLOv8m vs alternatives), event schema design (Option B: nested metadata), storage choice (SQLite → PostgreSQL migration path)
+- [docs/DESIGN.md](docs/DESIGN.md): architecture and product design.
+- [docs/CHOICES.md](docs/CHOICES.md): technical decision log.
+- [docs/presentation_deck.md](docs/presentation_deck.md): slide structure.
+- [docs/video_script.md](docs/video_script.md): demo recording script.
+- [frontend/README.md](frontend/README.md): frontend-specific notes.

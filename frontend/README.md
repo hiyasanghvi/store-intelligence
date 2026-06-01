@@ -1,63 +1,117 @@
-# Apex Retail Command Center
+# Apex React Command Center
 
-React + Vite frontend for the store-intelligence API.
+React + Vite frontend for APEX Store Intelligence.
 
-## Views
+Live app: https://storeintelligence.vercel.app  
+Backend API: https://store-intelligence-prr3.onrender.com
 
-- **Live Dashboard**: KPI scan, simulation controls, 5 winning feature cards, conversion funnel, brand attention, queue, confidence, and narrative insights.
-- **Journey Analytics**: graph-first analysis with a traffic mix pie chart, dwell momentum bars, conversion gauge, risk matrix, and shopper outcome waterfall.
-- **Vision Center**: CCTV feed playback and camera telemetry.
-- **Live Operations**: CCTV event feed, animated Live Spatial Floor Map, all-brand attention grid, operations actions, anomalies, and confidence monitoring.
-- **Store Comparison**: side-by-side store metrics.
+## Product Goal
 
-## Five Winning Features
+The frontend is designed as a manager command center, not a generic analytics dashboard. Each route answers a different store-operation question:
 
-- **Conversion Pulse**: real-time conversion health.
-- **Queue Rescue**: billing pressure score.
-- **Zone Magnet**: current strongest shopper zone.
-- **Alert Heat**: anomaly pressure in one card.
-- **Coverage Live**: active shopper zone coverage.
+| View | Question It Answers |
+|------|---------------------|
+| Live Dashboard | What is happening right now? |
+| Journey Analytics | Why are shoppers dropping off? |
+| Vision Center | What does the camera evidence show? |
+| Live Operations | What should staff do next? |
+| Store Comparison | Which store needs attention first? |
 
-## Analytics Graphs
+## Key Experiences
 
-- **Traffic Mix Pie**: visit distribution by zone.
-- **Dwell Momentum Bars**: ranked dwell intensity.
-- **Conversion Gauge**: live conversion with session lift.
-- **Risk Matrix**: queue pressure vs engagement.
-- **Shopper Outcome Waterfall**: entered, engaged, queued, and lost shoppers.
+### Live Dashboard
 
-## Spatial Floor Map
+- KPI cards for visitors, conversion, queue, and abandonment.
+- Six decision cards: Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, Lost Basket Risk, and Evidence Sync.
+- Each decision card now explains why the signal matters and the next action on hover/focus, so the deck stays useful instead of becoming a long feature list.
+- The funnel keeps the same backend stages but renders as a journey-style retention chart with shopper loss and overall conversion summaries.
+- Store Story Mode turns raw metrics into a readable manager summary.
+- SSE Live / API Live connection badge with polling fallback.
 
-The Live Spatial Floor Map is intentionally placed in **Live Operations**, not the dashboard. It sits beside the event feed and turns live dwell, visits, queue pressure, and animated people dots into:
+### Journey Analytics
 
-- zone pressure across entry, skincare, haircare, fragrance, impulse, billing, queue, and wellness areas;
-- fixture rankings for Brigade Road brand bays;
-- a next-best staff move that switches to checkout protection when queue pressure rises;
-- a compact all-brand attention grid similar to the original brand map, but cleaner.
+- Traffic mix pie.
+- Dwell momentum bars.
+- Conversion gauge.
+- Queue vs engagement risk matrix.
+- Shopper outcome waterfall.
+- Timeline and zone heatmap.
 
-The Brigade Road fixture model lives in `src/data/brigadeFloorPlan.ts`, while the rendering/scoring logic lives in `src/components/BrandMerchandisingMap.tsx`.
+### Vision Center
 
-## Camera Deployment
+- Five real CCTV camera clips from `public/cameras`.
+- Clickable camera thumbnails.
+- Localhost mode: attempts the backend YOLO MJPEG stream first.
+- Previous Recording mode: lets reviewers switch from live stream to the bundled CCTV recording, use native playback controls, and jump backward/forward.
+- Vercel mode: uses reliable bundled CCTV clips with privacy-safe person boxes, zones, confidence labels, and detection status boxes.
+- This keeps the deployed demo visually close to local YOLO without depending on Render to host large MP4 files or run expensive streaming inference.
 
-The full CCTV recordings are too large to bundle with the Render backend by default. For Vercel demos, `public/cameras/` contains short compressed `.webm` clips generated from the actual CCTV files:
+### Live Operations
 
-- `CAM_1.webm` from `CAM 3.mp4`
-- `CAM_2.webm` from `CAM 2.mp4`
-- `CAM_3.webm` from `CAM 1.mp4`
-- `CAM_4.webm` from `CAM 4.mp4`
-- `CAM_5.webm` from `CAM 5.mp4`
+- Live CCTV event ticker.
+- Spatial floor map based on Brigade Road fixture zones.
+- Animated people dots and zone pressure.
+- Brand attention grid.
+- Operations action center driven by queue pressure, conversion risk, and anomalies.
 
-Vision Center plays these real bundled recordings directly from Vercel, so all five cameras stay clickable and visually distinct even when Render has no uploaded full MP4 files.
+### Store Comparison
+
+- Side-by-side store metrics.
+- Network insights.
+- Per-store performance cards.
+
+## Why It Does Not Look Like a Template
+
+- Views are split by store-manager workflow, not by reused widgets.
+- The floor map uses domain-specific fixture concepts: entry, billing queue, wall bays, center islands, PMU, impulse zones.
+- Camera mode behaves differently by deployment environment so demos stay reliable.
+- Vision Center is privacy-safe by design: person boxes and zone evidence are shown without face recognition.
+- The UI surfaces business decisions, not only charts: staff movement, checkout protection, zone conversion leakage, and feed health.
 
 ## Local Development
 
-```bash
-npm install
-npm run dev
+```powershell
+cd C:\Users\hiyas\Downloads\Purplle-tech-challenge-master\store-intelligence\frontend
+npm.cmd install
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Build check:
+The app uses `http://localhost:8000` automatically when opened from localhost.
 
-```bash
-npm run build
+## Production Build
+
+```powershell
+npm.cmd run build
 ```
+
+## Vercel Deployment
+
+Set:
+
+```text
+VITE_API_URL=https://store-intelligence-prr3.onrender.com
+```
+
+Root directory:
+
+```text
+frontend
+```
+
+Live deployment:
+
+```text
+https://storeintelligence.vercel.app
+```
+
+## Camera Assets
+
+The deployed Vision Center uses these bundled clips:
+
+- `public/cameras/CAM_1.webm`
+- `public/cameras/CAM_2.webm`
+- `public/cameras/CAM_3.webm`
+- `public/cameras/CAM_4.webm`
+- `public/cameras/CAM_5.webm`
+
+They are compressed from the real CCTV recordings and are intentionally committed so Vercel always has playable camera evidence.

@@ -1,149 +1,94 @@
-# 🎬 APEX RETAIL STORE INTELLIGENCE — DEMO VIDEO SCRIPT
-# Duration Target: ~3–4 minutes
-# Format: Screen recording with voiceover
-# Tone: Confident, technical, concise. Like a senior engineer presenting to a hiring panel.
+# Demo Video Script
 
----
+Target length: 3 to 4 minutes.
 
-## ⏱️ [0:00 – 0:20] HOOK / INTRO
+Live frontend: https://storeintelligence.vercel.app  
+Live backend: https://store-intelligence-prr3.onrender.com
 
-**[SCREEN: Show the live deployed dashboard at https://purplle-tech-challenge.vercel.app]**
+## 0:00 - 0:20 Hook
 
-> "Retail stores are flying blind. Every online click is tracked.
-> But the moment a customer walks through a physical door — nothing.
-> This is Apex Retail Store Intelligence.
-> In the next 3 minutes, I'll show you this fully deployed, containerised store analytics system 
-> running live on Vercel and Railway, showing how we go from raw camera streams to real-time metrics."
+**Screen**: Open https://storeintelligence.vercel.app
 
----
+**Voiceover**
 
-## ⏱️ [0:20 – 0:50] ARCHITECTURE Overview
+"Physical retail has a data gap. Online stores know every click, but offline teams often only know how many people entered and what was sold. APEX Store Intelligence fills that gap by turning normal CCTV into live shopper journey analytics."
 
-**[SCREEN: Show docs/DESIGN.md in VS Code — scroll to the architecture diagram]**
+## 0:20 - 0:50 Architecture
 
-> "The system consists of four key layers:
->
-> 1. **The Detection Pipeline:** Runs YOLOv8 and ByteTrack on raw video clips to emit entry, exit, and zone events.
-> 2. **The Intelligence API:** A FastAPI backend backed by SQLite, fully containerised with Docker and deployed on Railway.
-> 3. **The Live Data Stream:** Server-Sent Events (SSE) that broadcast updates to client applications in under 100ms.
-> 4. **The Premium Dashboard:** A React frontend deployed on Vercel that renders real-time retail intelligence."
+**Screen**: Show `docs/DESIGN.md`
 
----
+**Voiceover**
 
-## ⏱️ [0:50 – 1:35] LIVE DASHBOARD & SIMULATION CONTROL
+"The system has four layers. The detection pipeline runs YOLO and ByteTrack on CCTV clips. The event layer converts tracks into entries, zone visits, queue joins, abandons, and purchases. The FastAPI backend computes metrics, funnel, heatmap, anomalies, and health. The React command center turns that into decisions for store teams."
 
-**[SCREEN: Switch to Vercel Frontend (https://purplle-tech-challenge.vercel.app)]**
+## 0:50 - 1:25 Dashboard
 
-> "Here is our live dashboard. All metrics are updated in real-time.
-> Let's head over to the **Cameras** tab to control the playback."
+**Screen**: Live Dashboard
 
-**[SCREEN: Click on "Cameras" tab. Click the "🔄 Sync & Restart" button, then click "5.0x" speed button]**
+**Voiceover**
 
-> "By clicking 'Sync & Restart', we trigger the backend simulation to reset the database and stream events from the beginning.
-> I will speed it up to 5x so we can watch the metrics tick up quickly."
+"The dashboard is an executive scan. We show visitors, conversion rate, checkout queue, and abandonment. The decision deck now focuses only on the signals that matter: Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, Lost Basket Risk, and Evidence Sync. Each card explains why it matters and what action to take, so it feels like a manager workflow instead of a feature dump."
 
-**[SCREEN: Click back to the "Dashboard" tab. Watch the visitors, conversion rate, queue depth, and timeline update in real time]**
+## 1:25 - 1:55 Journey Analytics
 
-> "As the events stream in, the visitor count climbs in real time. The conversion funnel updates dynamically.
-> The timeline log records each visitor's journey, and the active queue depth keeps track of the billing queue.
->
-> This is driven by Server-Sent Events — the pipeline emits structured events, the Railway backend processes them, and broadcasts the updates to the Vercel frontend in under 100ms."
+**Screen**: Journey Analytics
 
----
+**Voiceover**
 
-## ⏱️ [1:35 – 2:15] DYNAMIC CAMERA FEED & BACKEND FALLBACK
+"Journey Analytics explains why the numbers changed. Traffic mix, dwell momentum, conversion gauge, risk matrix, waterfall, timeline, heatmap, and the journey-style funnel show where shoppers engage, where they drop off, and how much traffic survives each stage."
 
-**[SCREEN: Click back to the "Cameras" tab. Show the camera player playing the simulated YOLO stream]**
+## 1:55 - 2:25 Vision Center
 
-> "If we look at the live video stream, you can see YOLOv8 bounding boxes, tracker IDs, and zone polygon overlays.
->
-> Since raw CCTV video files are extremely large (~680MB) and cannot be pushed to a cloud container, 
-> I built a **resilient backend-hosted camera fallback**. 
->
-> When the local YOLO server is offline, the Railway backend dynamically generates a simulated store overlay stream! 
-> It loads the camera zone coordinates from the layout file, moves mock customers through them, and streams it as MJPEG.
->
-> If you run the YOLO detection stream locally on your machine, the frontend automatically detects it 
-> and seamlessly switches to the local GPU stream, showing 'YOLO LIVE (LOCAL)'."
+**Screen**: Vision Center on Vercel, then optionally localhost
 
-**[SCREEN: Click on different camera thumbnails (CCTV 2, CCTV 3) to show the stream and zones switching dynamically]**
+**Voiceover**
 
-> "You can switch between any of the 5 cameras. The backend dynamically updates the overlays, labels, and stats for Skincare, Haircare, or the Billing Counter."
+"Vision Center provides camera evidence. In local mode, the app can show the real backend YOLO MJPEG stream with boxes and zones. Reviewers can also switch to Previous Recording mode, scrub the bundled CCTV clip, and jump backward or forward while seeing privacy-safe person boxes and zones. In the public Vercel demo, this keeps the camera proof reliable without hosting large MP4 recordings or running cloud YOLO inference."
 
----
+## 2:25 - 2:55 Live Operations
 
-## ⏱️ [2:15 – 2:45] API CORRECTNESS & ENDPOINTS
+**Screen**: Live Operations
 
-**[SCREEN: Switch to Terminal or Postman. Show requests to Railway endpoints]**
+**Voiceover**
 
-```bash
-# Windows PowerShell (Native formatting):
-Invoke-RestMethod -Uri "https://purplle-tech-challenge-production.up.railway.app/stores/STORE_BLR_002/metrics" | ConvertTo-Json -Depth 5
+"Live Operations turns analytics into floor action. The event feed, spatial floor map, brand attention grid, and action center show where staff should move. If queue pressure rises, the recommendation shifts from assisted selling to checkout protection."
 
-# Linux / Mac Bash / Git Bash (using curl and jq):
-curl -s "https://purplle-tech-challenge-production.up.railway.app/stores/STORE_BLR_002/metrics" | jq .
+## 2:55 - 3:20 API
 
-# -------------------------------------------------------------
-# Additional endpoints can be fetched similarly (Metrics, Funnel, Heatmap, Anomalies, Health)
-# e.g., Funnel endpoint:
-# PowerShell:
-Invoke-RestMethod -Uri "https://purplle-tech-challenge-production.up.railway.app/stores/STORE_BLR_002/funnel" | ConvertTo-Json
-# Bash:
-curl -s "https://purplle-tech-challenge-production.up.railway.app/stores/STORE_BLR_002/funnel" | jq .
+**Screen**: Swagger docs or terminal
+
+```powershell
+curl.exe https://store-intelligence-prr3.onrender.com/health
+curl.exe https://store-intelligence-prr3.onrender.com/stores/STORE_BLR_002/metrics
+curl.exe https://store-intelligence-prr3.onrender.com/stores/STORE_BLR_002/funnel
 ```
 
-> "All five required endpoints are fully functional on Railway. 
-> Responses are returned as structured, validated JSON. 
-> Ingestion is completely idempotent, and we return a 503 health warning if the database is unavailable, never exposing raw stack traces."
+**Voiceover**
 
----
+"The backend exposes clean REST endpoints for health, metrics, funnel, heatmap, anomalies, cameras, and simulation. Event ingestion is idempotent, and updates stream to the UI over Server-Sent Events with polling fallback."
 
-## ⏱️ [2:45 – 3:10] AUTOMATED TESTS
+## 3:20 - 3:45 Technical Differentiators
 
-**[SCREEN: Switch to terminal and run tests]**
+**Screen**: `docs/CHOICES.md`
 
-```bash
-pytest tests/ -v
-```
+**Voiceover**
 
-**[Wait for the 98 tests to pass successfully]**
+"The important engineering decisions are privacy and usefulness. There is no face recognition. Staff are filtered before calculating customer metrics. Re-entry matching reduces inflated visitor counts. POS transactions are correlated with billing-zone presence, making offline conversion more meaningful than a simple transaction ratio."
 
-> "I wrote a robust test suite covering 98 distinct test cases. 
-> This includes all major edge cases: empty stores, all-staff clips, visitor re-entry deduplication in the funnel, 
-> zero purchases, conversion rate drop anomalies, and stale feed detections. 
-> All tests are green."
+## 3:45 - 4:00 Close
 
----
+**Screen**: Frontend and backend live URLs
 
-## ⏱️ [3:10 – 3:35] DECISION LOG & NORTH STAR
+**Voiceover**
 
-**[SCREEN: Open docs/CHOICES.md or docs/DESIGN.md in VS Code — scroll slowly]**
+"APEX is a deployed, test-covered CCTV-to-decision platform for retail stores: live analytics, camera evidence, and actionable operations in one product."
 
-> "Every engineering decision has been documented:
->
-> - **ByteTrack vs DeepSORT:** Used ByteTrack because its IoU-based tracking performs cleanly even with anonymised/blurred faces.
-> - **Torso-Color Re-ID:** Torso color matching deduplicates visitors across cameras without expensive facial recognition.
-> - **FastAPI + SQLite:** SQLite provides a zero-config, highly-performant local DB that handles sequential stream writes safely, with a clear path to PostgreSQL for multi-store scaling.
->
-> All of these components directly serve our North Star metric: **offline conversion rate**."
+## Recording Checklist
 
----
-
-## ⏱️ [3:35 – 3:45] OUTRO
-
-**[SCREEN: Show the GitHub repo tree in the terminal]**
-
-> "The codebase is containerised and ready. 
-> The frontend and backend are fully deployed and running. 
-> Thank you, and I look forward to your follow-up questions."
-
-**[Fade to black / end recording]**
-
----
-
-# 📋 RECORDING TIPS
-
-- **Resolution:** 1920×1080.
-- **Audio:** Use a clean microphone in a quiet room.
-- **Speed:** Talk at a steady, confident pace.
-- **Simulated Stream:** The simulated stream is active and running 24/7 on Railway, meaning your Vercel site is completely self-contained for the reviewers!
+- Use the live frontend: https://storeintelligence.vercel.app
+- Show the API docs: https://store-intelligence-prr3.onrender.com/docs
+- Mention that localhost supports real YOLO stream.
+- Mention that Previous Recording mode supports playback review.
+- Mention that Vercel uses real CCTV clips with browser-rendered, privacy-safe person overlays for reliability.
+- Show at least one API response.
+- Show the Vision Center camera switching.

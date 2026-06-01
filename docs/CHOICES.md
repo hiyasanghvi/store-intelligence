@@ -1,132 +1,148 @@
-# CHOICES.md — Key Technical Decisions
+# Technical Choices
 
-## Decision 1: Detection Model Selection
+This document explains the decisions that make APEX feel like a product rather than a collection of challenge endpoints.
 
-### The Question
-Which object detection model should be used as the foundation for the detection pipeline?
+## 1. Use Geometry for Zones, Not Another Model
 
-### Options Considered
+### Choice
 
-| Model | Pros | Cons |
-|-------|------|------|
-| YOLOv8m | Excellent speed/accuracy balance, ByteTrack built-in via supervision, COCO pretrained (person class is class 0), active community, runs at ~20fps on RTX 3050 at 1080p | Not the highest accuracy model available |
-| YOLOv9 | Better accuracy than v8 on some benchmarks | Less mature ecosystem, supervision integration less tested, slower |
-| RT-DETR | Transformer-based, strong at occlusion handling | Memory-hungry, slower on 6GB VRAM, harder to integrate with ByteTrack |
-| MediaPipe | Very fast, works on CPU | Poor accuracy at retail CCTV distances (~3-6m), designed for close-up pose |
-| CLIP / GPT-4V (VLM) | Could do zero-shot person + zone + staff classification in one pass | API cost, latency (>1s per frame), not viable for video pipeline |
+APEX uses normalized store-layout polygons and a point-in-polygon classifier to assign each shopper track to a zone.
 
-### What AI Suggested
-I asked Claude to evaluate these options for a 6GB GPU, 1080p, 30fps input, blurred faces. Claude recommended YOLOv8 as the starting point and specifically YOLOv8m as the sweet spot — not 'n' or 's' (too low accuracy for group detection at distance) and not 'l' or 'x' (VRAM risk at 1080p). It warned against RT-DETR for this VRAM budget.
+### Why
 
-I also separately asked about using a VLM for zone classification. Claude's suggestion: use GPT-4V or Gemini Vision to classify which zone a person is in based on the bounding box region + a store layout diagram. I evaluated this and rejected it for real-time use — the latency would make 30fps processing take hours. However, I see value in using VLMs for post-hoc validation of zone classifications on a sample of frames.
+Zone membership is deterministic once the camera is calibrated. Calling a vision-language model for every frame would be slow, expensive, and less repeatable. Geometry makes the system fast enough for replay and edge deployments.
 
-### What I Chose and Why
-**YOLOv8m** on CUDA.
+### Product Impact
 
-Reasons:
-1. The pretrained COCO weights detect "person" (class 0) well at retail distances with natural variation.
-2. `supervision` library provides ByteTrack integration with a single function call — faster development.
-3. Running at stride 2 (every 2nd frame) on an RTX 3050 takes ~60ms/frame including tracking, leaving headroom for zone classification.
-4. The medium variant handles the edge cases in the footage: partial occlusion (multi-scale feature detection), group entry (separate bounding boxes per person), and varying lighting (well-calibrated BN layers from COCO training).
+This enables live zone dwell, dead-zone detection, fixture-level pressure, and floor-map overlays without requiring custom model training.
 
-I chose NOT to use a VLM for any real-time pipeline stage. The clips are 2-3 minutes each — at 1 API call per frame that would be 3600-5400 API calls at ~$0.01-0.02 per call = $36-$108 per clip. For batch post-processing or validation, a VLM is sensible. Not for the hot path.
+## 2. Track Shoppers as Anonymous Sessions
 
----
+### Choice
 
-## Decision 2: Event Schema Design
+Use YOLO detections plus ByteTrack IDs, then add lightweight torso-color signatures for re-entry and cross-camera continuity.
 
-### The Question
-How should the event schema be structured to support all the analytics queries required by the API?
+### Why
 
-### Options Considered
+The product needs journey continuity, but it should not identify people. Face recognition would be unnecessary and privacy-invasive. Anonymous track IDs and color signatures are enough to calculate operational metrics.
 
-**Option A: Flat schema** — all fields at the top level, no nested metadata. Simpler to parse but requires nullable columns for every optional field.
+### Product Impact
 
-**Option B: Nested metadata object** — core fields at top level, optional/type-specific fields in `metadata`. Matches the spec's sample schema exactly and allows extensibility.
+Visitor counts are less inflated, re-entry can be handled, and the system stays privacy-first.
 
-**Option C: Polymorphic schemas** — different schema per event_type (EntryEvent, ZoneDwellEvent, etc.). Strongly typed but breaks batch processing (can't validate a mixed batch uniformly).
+## 3. Filter Staff Before Calculating Metrics
 
-### What AI Suggested
-Claude suggested Option B (nested metadata) and specifically called out that the `session_seq` field is crucial for debugging: without an ordinal event position per session, replay and debugging becomes very hard. It also suggested adding a `camera_id` field early (before the spec made it explicit) to support cross-camera deduplication at the API level.
+### Choice
 
-I agreed with both suggestions. I also added `confidence` as a first-class field (not buried in metadata) because filtering by confidence threshold is a core analytics operation.
+Use long-duration tracks and torso HSV color clustering to mark likely staff.
 
-### What I Chose and Why
-**Option B: Nested metadata**, exactly as specified, with:
-- `confidence` as a top-level field (not suppressed even when low — flag it, keep it)
-- `session_seq` in metadata for replay/debugging
-- `queue_depth` in metadata (only meaningful for BILLING_QUEUE_JOIN events)
-- `is_staff` at top level so all metric queries can filter it in a single WHERE clause
+### Why
 
-The key design principle: **never silently drop low-confidence events**. The spec explicitly calls this out. A detection with confidence=0.21 that happens to be the only record of a re-entry is better than a clean log with a missing REENTRY event.
+Staff repeatedly appear in the same cameras and often wear consistent colors. Counting them as customers corrupts conversion rate, dwell, and queue signals.
 
----
+### Product Impact
 
-## Decision 3: API Storage — SQLite vs PostgreSQL
+APEX can claim shopper analytics, not just person analytics.
 
-### The Question
-What storage engine should back the Intelligence API?
+## 4. Correlate POS by Billing Presence
 
-### Options Considered
+### Choice
 
-| Option | Pros | Cons |
-|--------|------|------|
-| SQLite | Zero-config, single file, Dockerizes trivially, no port conflicts | Write concurrency limited (WAL mode helps), not distributed |
-| PostgreSQL | Production-grade, full concurrency, partitioning, extensions (TimescaleDB) | Requires separate container, ~15 seconds startup, credentials management |
-| Redis | Extremely fast for real-time metrics | Not a relational store, complex to query for funnel/heatmap |
-| DuckDB | Excellent analytical query performance | Less suitable for high-write OLTP (ingest endpoint) |
+When POS transactions have no customer ID, correlate purchases with shoppers recently present in the billing queue or counter zone.
 
-### What AI Suggested
-Claude initially recommended PostgreSQL with TimescaleDB for time-series capabilities, citing that at 40 stores sending events in real time, SQLite would become a bottleneck. It estimated SQLite WAL mode handles ~1000 writes/second, which could be a concern.
+### Why
 
-I pushed back: for the challenge, we are processing 5 clips offline and replaying events. The ingest rate is bounded by the detection pipeline throughput, not 40 live stores. At challenge scale, SQLite is more than adequate.
+`transactions / visitors` is easy but weak. Billing-zone correlation creates a behavioral link between camera events and POS outcomes.
 
-Claude then agreed and noted that **the correct decision is SQLite for the challenge** and **PostgreSQL for production**, and that documenting this distinction is itself good engineering.
+### Product Impact
 
-### What I Chose and Why
-**SQLite** for the challenge, with a clear migration path documented:
+The conversion funnel becomes defensible:
 
-```python
-# Current (challenge)
-DATABASE_URL = "sqlite:///./data/store_intelligence.db"
+Entry -> Zone Visit -> Billing Queue -> Purchase
 
-# Production (40 stores, live feed)
-DATABASE_URL = "postgresql://user:pass@db:5432/apex_retail"
-```
+## 5. Make the UI Workflow-Based
 
-The choice of SQLAlchemy as the ORM means this is a one-line change. The schema uses standard SQL — no SQLite-specific syntax.
+### Choice
 
-**What breaks at 40 live stores**: SQLite's single-writer limitation. With 40 stores each sending a batch of events every 30 seconds, you'd have contention on the events table write lock. PostgreSQL with row-level locking and connection pooling (via PgBouncer) would be the right move. I would also add a Redis cache in front of the metric queries (TTL=30s) so 40 concurrent `/metrics` requests don't each hit the DB.
+Split the React app into five views:
 
-This is exactly the answer I'd give in a follow-up question about scaling.
+- Live Dashboard
+- Journey Analytics
+- Vision Center
+- Live Operations
+- Store Comparison
 
----
+### Why
 
-## Decision 4: Split Frontend Views by Job, Not by Reused Widgets
+Repeated KPI cards across every page make a product feel copied. Store teams need different views for different jobs: scan, diagnose, verify, act, compare.
 
-### The Question
-How should the React frontend be reorganized so Dashboard and Journey Analytics do not show nearly the same panels?
+### Product Impact
 
-### Options Considered
+The app feels like a command center instead of a template dashboard.
 
-| Option | Pros | Cons |
-|--------|------|------|
-| Reuse KPI/funnel/queue everywhere | Fast and consistent | Makes routes feel copied and wastes screen space |
-| Put everything on Dashboard | Very discoverable | Too dense for executive scanning |
-| Split by manager workflow | Clear mental model, less repetition | Requires more custom visuals |
+## 6. Support Live and Previous Recording Camera Modes
 
-### What I Chose and Why
-**Split by manager workflow.**
+### Choice
 
-The Dashboard now answers "what is happening right now?" with KPIs and a 5-card winning feature deck. Journey Analytics answers "why is it happening?" with charts: traffic mix pie, dwell bars, conversion gauge, risk matrix, and outcome waterfall. Live Operations answers "what should staff do next?" with the event feed, animated floor map, all-brand attention grid, and action center.
+Localhost attempts the real YOLO MJPEG stream. Previous Recording mode lets reviewers inspect bundled CCTV clips with playback controls and jump buttons. Vercel uses the same clips with browser-rendered privacy-safe person overlays.
 
-I also separated the Brigade Road planogram data into `frontend/src/data/brigadeFloorPlan.ts` instead of hardcoding every fixture inside the component. That keeps the component focused on live scoring, makes the project structure less copy-like, and makes later workbook-derived layout updates easier.
+### Why
 
-### Extra Differentiators Added
-- **Conversion Pulse**: live conversion health card.
-- **Queue Rescue**: billing pressure score.
-- **Zone Magnet**: top shopper attention zone.
-- **Alert Heat**: active anomaly pressure.
-- **Coverage Live**: active shopper zone coverage.
-- **Animated Live Spatial Floor Map**: moving people dots over the Brigade Road planogram.
-- **Graph analytics suite**: pie, bars, gauge, risk matrix, and waterfall charts without adding a charting dependency.
+Vercel cannot run Python YOLO inference, and Render should not be forced to serve large raw MP4 files for a demo. But reviewers still need to see camera evidence and detection context.
+
+### Product Impact
+
+The demo is reliable on https://storeintelligence.vercel.app while still preserving the real local YOLO path for technical review and a safer recording-review path for product review.
+
+## 7. Keep the Funnel Stages, Change the Visual
+
+### Choice
+
+The backend funnel remains Entry -> Zone Visit -> Billing Queue -> Purchase. The React UI renders those stages as a journey-retention chart with counts, retention, per-stage loss, and overall conversion.
+
+### Why
+
+The original trapezoid-style funnel looked too generic. Changing only the presentation keeps the analytics defensible while making the product feel more custom.
+
+### Product Impact
+
+Reviewers can understand drop-off quickly without feeling like they are looking at a copied dashboard chart.
+
+## 8. Keep SQLite for Demo, Preserve PostgreSQL Path
+
+### Choice
+
+Use SQLite with SQLAlchemy for the deployed challenge/demo version.
+
+### Why
+
+The workload is event replay plus metric reads. SQLite is portable, easy to ship, and enough for the current data size. SQLAlchemy keeps the production migration clean.
+
+### Production Path
+
+For multi-store production:
+
+- PostgreSQL or TimescaleDB for event history;
+- Redis cache for hot metric reads;
+- edge inference workers for camera processing;
+- object storage for full camera recordings.
+
+## 9. Return Actions, Not Just Alerts
+
+### Choice
+
+Anomaly responses include severity and suggested action.
+
+### Why
+
+Managers should not need to interpret raw queue depth or dwell tables under pressure. The system should say what changed and what to do next.
+
+### Product Impact
+
+APEX becomes an operations tool, not only an analytics viewer.
+
+## Current Deployments
+
+- Frontend: https://storeintelligence.vercel.app
+- Backend: https://store-intelligence-prr3.onrender.com
+- API docs: https://store-intelligence-prr3.onrender.com/docs

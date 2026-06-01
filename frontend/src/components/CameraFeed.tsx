@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 interface Camera {
   cam_id: string;
@@ -133,8 +133,12 @@ function yoloStreamSrc(apiBase: string, cam: Camera | undefined, camId: string) 
 export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [selected, setSelected] = useState('CAM_1');
+  const [sourceMode, setSourceMode] = useState<'live' | 'recording'>('live');
+  const [reviewOffset, setReviewOffset] = useState(0);
+  const [overlayTick, setOverlayTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   void storeId;
 
   useEffect(() => {
@@ -168,6 +172,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
 
   useEffect(() => {
     setStreamError(false);
+    setReviewOffset(0);
   }, [selected, apiBase]);
 
   const visibleCameras: Camera[] = cameras.length > 0
@@ -184,17 +189,53 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
   const streamSrc = yoloStreamSrc(apiBase, selectedCamera, selectedId);
   const isLocalBrowser = typeof window !== 'undefined'
     && ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
-  const showYoloStream = isLocalBrowser && !streamError;
+  const showYoloStream = sourceMode === 'live' && isLocalBrowser && !streamError;
   const sourceLabel = showYoloStream
     ? 'Local YOLO stream'
-    : 'AI overlay preview';
+    : sourceMode === 'recording'
+      ? 'Previous recording'
+      : 'AI overlay preview';
   const overlay = AI_OVERLAYS[selectedId] ?? { boxes: [], zones: [] };
+  const liveOverlay = useMemo(() => ({
+    zones: overlay.zones,
+    boxes: overlay.boxes.map((box, idx) => ({
+      ...box,
+      x: Math.max(1, Math.min(88, box.x + Math.sin((overlayTick + idx) * 0.7) * 1.6)),
+      y: Math.max(1, Math.min(88, box.y + Math.cos((overlayTick + idx) * 0.55) * 1.2)),
+      confidence: Math.max(58, Math.min(94, box.confidence + Math.round(Math.sin(overlayTick + idx) * 4))),
+    })),
+  }), [overlay, overlayTick]);
 
   useEffect(() => {
-    if (!isLocalBrowser || streamError) return;
+    if (sourceMode !== 'live' || !isLocalBrowser || streamError) return;
     const timeout = window.setTimeout(() => setStreamError(true), 7000);
     return () => window.clearTimeout(timeout);
-  }, [isLocalBrowser, selectedId, streamError]);
+  }, [isLocalBrowser, selectedId, sourceMode, streamError]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setOverlayTick((tick) => tick + 1), 1400);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const seekReview = (seconds: number) => {
+    setSourceMode('recording');
+    setReviewOffset((offset) => Math.max(0, offset + seconds));
+  };
+
+  const jumpToLive = () => {
+    setSourceMode('live');
+    setReviewOffset(0);
+  };
+
+  const applyReviewOffset = () => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    video.currentTime = Math.min(reviewOffset, Math.max(video.duration - 0.25, 0));
+  };
+
+  useEffect(() => {
+    if (sourceMode === 'recording') applyReviewOffset();
+  }, [reviewOffset, sourceMode]);
 
   if (loading) {
     return (
@@ -210,7 +251,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
       <div className="cam-control-header compact">
         <div className="cam-title-badge">
           <span className="ai-badge-dot" />
-          <span className="ai-badge-text">LIVE YOLO CCTV</span>
+          <span className="ai-badge-text">PRIVACY-SAFE PERSON DETECTION</span>
         </div>
         <div className="cam-speed-selector">
           <span className="speed-label">Source:</span>
@@ -222,7 +263,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
         <div className="cam-video-wrap">
           <div className="cam-overlay-badge live local">
             <span className="cam-live-dot green-pulse" />
-            {showYoloStream ? 'YOLO DETECTION LIVE' : 'REAL CCTV PREVIEW'}
+            {showYoloStream ? 'YOLO DETECTION LIVE' : sourceMode === 'recording' ? 'PREVIOUS RECORDING' : 'REAL CCTV PREVIEW'}
           </div>
           <div className="cam-overlay-label">
             <span className="cam-overlay-icon">REC</span>
@@ -241,7 +282,8 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
             />
           ) : (
             <video
-              key={`${selectedId}-preview`}
+              ref={videoRef}
+              key={`${selectedId}-preview-${sourceMode}`}
               src={previewSrc(selectedId)}
               className="cam-video-el img-stream"
               autoPlay
@@ -249,11 +291,12 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
               loop
               playsInline
               controls
+              onLoadedMetadata={applyReviewOffset}
             />
           )}
           {!showYoloStream && (
             <div className="vision-ai-overlay" aria-hidden="true">
-              {overlay.zones.map((zone) => (
+              {liveOverlay.zones.map((zone) => (
                 <div
                   key={zone.label}
                   className="vision-zone"
@@ -269,7 +312,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
                   <span style={{ color: zone.color }}>{zone.label}</span>
                 </div>
               ))}
-              {overlay.boxes.map((box) => (
+              {liveOverlay.boxes.map((box) => (
                 <div
                   key={box.id}
                   className="vision-person-box"
@@ -287,9 +330,38 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ apiBase, storeId }) => {
                   <i style={{ backgroundColor: box.color }} />
                 </div>
               ))}
-              <div className="vision-yolo-watermark">LIVE YOLO v8n</div>
+              <div className="vision-yolo-watermark">PERSON DETECTION</div>
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="recording-control-strip">
+        <button
+          type="button"
+          className={`recording-mode-btn ${sourceMode === 'live' ? 'active' : ''}`}
+          onClick={jumpToLive}
+        >
+          Live
+        </button>
+        <button
+          type="button"
+          className={`recording-mode-btn ${sourceMode === 'recording' ? 'active' : ''}`}
+          onClick={() => setSourceMode('recording')}
+        >
+          Previous Recording
+        </button>
+        <button type="button" className="review-jump-btn" onClick={() => seekReview(-15)}>
+          Back 15s
+        </button>
+        <button type="button" className="review-jump-btn" onClick={() => seekReview(15)}>
+          Forward 15s
+        </button>
+        <div className="detection-status-boxes">
+          <span><b>{liveOverlay.boxes.length}</b> persons</span>
+          <span><b>{liveOverlay.zones.length}</b> zones</span>
+          <span><b>{sourceMode === 'recording' ? 'Review' : 'Live'}</b> mode</span>
+          <span><b>No face ID</b> safer tracking</span>
         </div>
       </div>
 

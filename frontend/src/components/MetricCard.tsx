@@ -91,7 +91,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
     if (delta === undefined || delta === null) return null;
     if (delta > 0) return { cls: 'up', label: `+${delta > 0.01 ? (delta * 100).toFixed(1) + '%' : delta}` };
     if (delta < 0) return { cls: 'down', label: `${delta > -0.01 ? (delta * 100).toFixed(1) + '%' : delta}` };
-    return { cls: 'neutral', label: '—' };
+    return { cls: 'neutral', label: '-' };
   };
 
   const deltaInfo = getDeltaLabel();

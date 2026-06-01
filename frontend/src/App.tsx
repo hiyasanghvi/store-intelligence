@@ -21,7 +21,7 @@ import StoreNarrative from './components/StoreNarrative';
 import DetectionConfidenceMonitor from './components/DetectionConfidenceMonitor';
 import OpsCommandCenter from './components/OpsCommandCenter';
 import BrandMerchandisingMap, { BrandAttentionSummary } from './components/BrandMerchandisingMap';
-import WinningFeatureDeck from './components/WinningFeatureDeck';
+import IntelligenceSignals from './components/IntelligenceSignals';
 import AnalyticsCommandView from './components/AnalyticsCommandView';
 
 const API_BASE = getApiUrl();
@@ -64,7 +64,7 @@ const NavIcons = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard',  label: 'Live Dashboard',    description: 'Executive pulse and winning features' },
+  { id: 'dashboard',  label: 'Live Dashboard',    description: 'Executive pulse and intelligence signals' },
   { id: 'analytics',  label: 'Journey Analytics', description: 'Pie charts, dwell, risk, outcome graphs' },
   { id: 'cameras',    label: 'Vision Center',     description: 'Camera feeds and overlays' },
   { id: 'events',     label: 'Live Operations',   description: 'Event feed, floor map, alerts' },
@@ -425,7 +425,7 @@ export const App: React.FC = () => {
               {renderSimulationControls()}
               {renderDashboardShortcuts()}
               {renderKpiGrid()}
-              <WinningFeatureDeck metrics={activeMetrics} anomalyCount={anomalies.length} />
+              <IntelligenceSignals metrics={activeMetrics} anomalyCount={anomalies.length} />
 
               <StoreNarrative metrics={activeMetrics} anomalies={anomalies} />
 

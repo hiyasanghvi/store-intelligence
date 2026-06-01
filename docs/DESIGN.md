@@ -1,131 +1,170 @@
-# DESIGN.md — Apex Retail Store Intelligence System
+# Apex Store Intelligence Design
 
-## Architecture Overview
+APEX is a privacy-first store intelligence system that converts ordinary CCTV into live operational decisions. It is built around one product idea: physical retail should have the same journey visibility that e-commerce teams already expect.
 
-This system converts raw CCTV footage from physical retail stores into a live analytics API. It is built in four connected layers:
+Live frontend: https://storeintelligence.vercel.app  
+Live backend: https://store-intelligence-prr3.onrender.com
 
+## System Shape
+
+```text
+CCTV clips / camera recordings
+        |
+        v
+Detection pipeline
+  YOLOv8 person detection
+  ByteTrack tracking
+  zone polygon classifier
+  staff filtering
+  re-entry and cross-camera matching
+        |
+        v
+Structured events
+  ENTRY, EXIT, ZONE_ENTER, ZONE_DWELL,
+  BILLING_QUEUE_JOIN, BILLING_QUEUE_ABANDON
+        |
+        v
+FastAPI intelligence service
+  metrics, funnel, heatmap, anomalies,
+  health, camera streams, simulation, SSE
+        |
+        v
+React command center
+  dashboard, journey analytics,
+  vision center, live operations, comparison
 ```
-CCTV Clips (MP4)
-     │
-     ▼
-┌────────────────────────────────────────┐
-│  Detection Layer                        │
-│  YOLOv8m (GPU) → ByteTrack → Events   │
-│  Staff detection (HSV histograms)       │
-│  Zone classifier (polygon containment)  │
-│  Re-ID tracker (appearance hash)        │
-└──────────────┬─────────────────────────┘
-               │  data/events.jsonl
-               ▼
-┌────────────────────────────────────────┐
-│  Intelligence API (FastAPI)            │
-│  POST /events/ingest                   │
-│  GET  /stores/{id}/metrics             │
-│  GET  /stores/{id}/funnel              │
-│  GET  /stores/{id}/heatmap             │
-│  GET  /stores/{id}/anomalies           │
-│  GET  /health                          │
-└──────────────┬─────────────────────────┘
-               │  Server-Sent Events
-               ▼
-┌────────────────────────────────────────┐
-│  Live Dashboard                        │
-│  /dashboard — SSE, auto-update UI      │
-└────────────────────────────────────────┘
-```
 
-### Detection Layer
+## Detection Layer
 
-**Model**: YOLOv8m, loaded via the `ultralytics` library and pinned to CUDA device. The 'm' (medium) variant was chosen specifically for the 6GB RTX 3050 — the 'l' model would saturate VRAM at 1080p.
+### Person Detection
 
-**Tracking**: ByteTrack via the `supervision` library. ByteTrack assigns continuous track IDs across frames even through occlusion, which is the foundation for session continuity. It runs as a filter on top of YOLOv8 detections.
+The pipeline uses YOLOv8 for person detection. The batch pipeline is optimized for accuracy on retail CCTV, while the live camera endpoint uses a lighter model path so local MJPEG streaming remains practical.
 
-**Frame stride**: Every 2nd frame is processed (~15fps effective at 30fps source). This halves GPU time with negligible accuracy loss — humans don't teleport between frames.
+The system keeps low-confidence detections instead of silently dropping them. Confidence is stored as a first-class field because low-confidence events are still useful for audit, replay, and edge-case review.
 
-**Zone classification**: Each camera's frame is divided into named polygons from `store_layout.json`. A person's bounding box centroid is tested against these polygons using a ray-casting algorithm. Zones are defined in normalised [0,1] coordinates so the classifier is resolution-agnostic.
+### Tracking
 
-**Entry/Exit detection**: A horizontal line (`entry_line_y_ratio`) divides the entry camera frame. A centroid crossing this line from top-to-bottom = ENTRY (customer entering store), bottom-to-top = EXIT. We track the centroid history per track_id and check for line crossings on each frame pair.
+ByteTrack turns frame-level detections into continuous track IDs. This is important because APEX does not care about a single frame; it cares about a shopper journey across time.
 
-**Staff detection**: Two heuristics are combined:
-1. **Duration**: Any person whose track spans ≥65% of the total clip duration is staff (customers don't stay for 2.5 minutes straight in a 3-minute clip).
-2. **Uniform colour**: We sample the torso region of each bounding box, compute an 18-bin HSV hue histogram, and cluster dominant hues across long-duration tracks. Staff wearing a consistent uniform colour are identified by matching this cluster.
+Tracking powers:
 
-Neither heuristic is perfect in isolation, but together they achieve high precision on the short clips in this dataset.
+- unique visitor estimation;
+- line crossing for entry and exit;
+- zone dwell duration;
+- billing queue entry and abandonment;
+- session sequence numbers for replay.
 
-**Re-ID**: Cross-camera deduplication uses an "appearance hash" — the top-4 dominant 8-bin HSV hue bins from the bounding box region. Two detections within 90 seconds with the same appearance hash are assumed to be the same person. Re-entry detection uses a 10-minute window: a person who exits and re-enters within 10 minutes is flagged as REENTRY rather than a new ENTRY.
+### Zone Intelligence
 
-### Intelligence API
+Zones are defined as normalized polygons in `data/store_layout.json`. The classifier uses point-in-polygon logic against each bounding-box centroid, so it is fast, deterministic, and resolution independent.
 
-**Framework**: FastAPI with Uvicorn. FastAPI's async support means the SSE dashboard stream runs concurrently with metric queries without blocking.
+This is deliberately not a vision-language model call. Zone assignment needs to run on thousands of frames, so geometry is the right hot-path tool.
 
-**Storage**: SQLite via SQLAlchemy. For the challenge scale (5 clips, 2 stores), SQLite is sufficient. In production at 40 stores, this would be replaced by PostgreSQL with time-based partitioning on the `events` table.
+### Staff Filtering
 
-**Idempotency**: `POST /events/ingest` deduplicates by `event_id` before any DB write. The detection pipeline generates UUID v4 event_ids at emission time, so replaying the pipeline output or re-posting the same JSONL file is safe.
+Retail staff can destroy customer metrics if they are counted as shoppers. APEX uses two signals:
 
-**Real-time metrics**: All metric queries hit the database directly — there is no cache. This ensures the API always reflects the latest ingested state. For production scale, a Redis cache with short TTL (30s) would be appropriate.
+- long-duration tracks that persist across much of a clip;
+- torso HSV color signatures that often identify uniform-like movement.
 
-**Conversion rate correlation**: POS transactions have no customer_id. We correlate by time window: a customer who was in the BILLING_COUNTER or BILLING_QUEUE zone in the 5 minutes preceding any POS transaction at the same store counts as "converted." This is the industry-standard approach when customer identity isn't available in POS data.
+The event schema carries `is_staff`, and metric queries filter staff out.
 
-**Anomaly detection**: Rule-based, not ML-based. Each anomaly type has a clear threshold:
-- BILLING_QUEUE_SPIKE: queue_depth ≥ 5 in 2+ consecutive events
-- CONVERSION_DROP: current rate < 70% of rolling average
-- DEAD_ZONE: no customer zone visits in 30 minutes
-- STALE_FEED: no events received in 10 minutes
+### Re-Entry and Cross-Camera Matching
 
-The structured `suggested_action` field per anomaly makes this actionable for store managers without requiring them to interpret raw metrics.
+The tracker stores a compact torso color signature. If a similar signature appears again within the configured time window, APEX treats that as a continuing or returning shopper instead of blindly creating a new visitor.
 
-### Live Dashboard (Part E)
+This keeps the visitor count more honest when shoppers leave frame, cross camera boundaries, or re-enter.
 
-There are two visualization frontends provided:
-1. **Built-in HTML/JS Dashboard**: Serves a fast, single-file template directly from the FastAPI server at `/dashboard`. It uses browser-native `EventSource` to receive Server-Sent Events (SSE) updates instantly.
-2. **React + TypeScript Command Center**: A state-of-the-art React + Vite frontend located in the `frontend/` directory, served at `http://localhost:3000`. It features:
-   - A lighter **operations console layout** with the KPI dashboard, graph analytics, camera review, and live floor-control workflows separated into distinct screens.
-   - Custom **reactive SVG charts** showing vertical conversion funnels and horizontal traffic heatmaps.
-   - Dynamic **queue line occupancy telemetry** showing cashier wait points.
-   - Real-time **SSE custom hooks** (`useStoreSSE`) with exponential backoff automatic reconnection.
-   - A **Live Spatial Floor Map** in the Live Operations view. The map translates Brigade Road workbook fixtures into top/bottom wall bays, center island fixtures, PMU, queue lane, cash counter, and entry threshold zones.
-   - **Animated people dots, all-brand attention, and next-best staff move** signals derived from live dwell, visit count, queue depth, and conversion context.
-   - A dedicated **Journey Analytics graph suite** with traffic mix pie chart, dwell momentum bars, conversion gauge, shopper outcome waterfall, and queue/engagement risk matrix.
-   - A **5-card winning feature deck** on the dashboard: Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, and Coverage Live.
+## API Layer
 
-Both update in under 100ms from when events hit the ingest endpoint.
+FastAPI exposes both analytics and live operations primitives:
 
-### Frontend Information Architecture
+- event ingestion with idempotent `event_id` handling;
+- real-time metric queries;
+- funnel computation;
+- zone heatmaps;
+- anomaly detection;
+- feed health;
+- simulation controls;
+- SSE stream for live dashboard updates;
+- camera metadata and MJPEG stream endpoints.
 
-The frontend intentionally avoids repeated panels across routes:
+SQLite is used for the challenge/demo version because it is simple, portable, and reliable for replay workloads. SQLAlchemy keeps the migration path to PostgreSQL straightforward.
 
-| View | Role | Primary visuals |
-|------|------|-----------------|
-| Live Dashboard | Executive scan | KPI cards, winning feature deck, funnel, brand attention summary, queue, confidence |
-| Journey Analytics | Analysis workspace | Pie chart, dwell bars, gauge, risk matrix, waterfall, timeline, heatmap |
-| Live Operations | Floor control | Event feed, animated planogram, all-brand attention, anomalies, action center |
-| Vision Center | Camera review | CCTV player, camera thumbnails, YOLO stream telemetry |
-| Store Comparison | Network view | Store table, per-store cards, network insights |
+## Business Logic
 
----
+### Conversion
 
-## AI-Assisted Decisions
+The POS data does not contain a customer ID, so conversion is inferred using time-window correlation. If a shopper was present in billing queue or billing counter shortly before a transaction, the system treats that shopper as converted.
 
-### 1. ByteTrack vs DeepSORT for multi-object tracking
+This is stronger than `transactions / visitors` because it links conversion to actual store behavior.
 
-I asked Claude: *"Compare ByteTrack and DeepSORT for retail CCTV tracking where faces are blurred and lighting varies. Which should I choose?"*
+### Funnel
 
-Claude's response correctly identified that DeepSORT's appearance feature extractor (typically a ResNet) relies on face/body texture features that are degraded when faces are blurred — ByteTrack uses pure motion (Kalman filter + IoU) which is robust to appearance changes. I agreed with this reasoning and chose ByteTrack. Claude also noted that ByteTrack is now integrated into `ultralytics` directly via `supervision`, which simplified the implementation.
+The funnel has four stages:
 
-**Decision**: Use ByteTrack. I agreed with the AI recommendation.
+1. Entry
+2. Zone Visit
+3. Billing Queue
+4. Purchase
 
-### 2. Staff detection approach: re-ID model vs heuristics
+Drop-off percentages are calculated between adjacent stages.
 
-I asked Claude: *"I don't have labelled training data for staff vs customer classification. Should I use a zero-shot VLM to classify each bounding box, or use simpler heuristics?"*
+The React command center keeps those same backend stages and renders them as a journey-retention chart. Each row shows shopper count, retention from entry, loss from the previous stage, and the final overall conversion summary.
 
-Claude initially suggested using GPT-4V or CLIP zero-shot classification per frame, which would have been accurate but extremely slow (API latency per frame) and expensive. After I pushed back, it agreed that for a batch pipeline with 30fps video, per-frame VLM calls are impractical.
+### Anomalies
 
-**My decision**: I overrode the initial AI suggestion and implemented the colour-histogram + duration heuristic approach. This runs in microseconds per frame and works well for the structured retail environment where staff wear consistent uniforms. I documented this in CHOICES.md.
+APEX surfaces operational problems instead of forcing managers to inspect raw data:
 
-### 3. Conversion rate correlation method
+- billing queue spike;
+- conversion drop;
+- dead zone;
+- stale feed.
 
-I asked Claude: *"With no customer_id in POS data, how do I correlate visitors to transactions to compute conversion rate?"*
+Each anomaly includes severity and a suggested action.
 
-Claude suggested three approaches: (a) time window matching, (b) session count ratio (transactions/visitors), (c) billing zone dwell pattern matching. It recommended (b) as simplest, but I disagreed — session count ratio double-counts when multiple customers purchase in quick succession and misses the causal link between billing zone presence and transaction.
+## Frontend Design
 
-**My decision**: I implemented (a) time window matching with a 5-minute window before each transaction, tracking which visitors were in the billing zone during that window. This better represents actual conversion intent and is more defensible under follow-up questioning. I partly deviated from the AI recommendation.
+The frontend avoids a copied dashboard feel by separating workflows:
+
+| View | Job |
+|------|-----|
+| Live Dashboard | executive scan and current store pulse |
+| Journey Analytics | explain shopper movement and drop-off |
+| Vision Center | camera evidence and AI overlays |
+| Live Operations | next staff move and floor pressure |
+| Store Comparison | compare stores side by side |
+
+The Live Dashboard decision deck is intentionally limited to the highest-signal cards: Conversion Pulse, Queue Rescue, Zone Magnet, Alert Heat, Lost Basket Risk, and Evidence Sync. Each card exposes a short explanation and next action on hover/focus, which makes the feature set defensible instead of decorative.
+
+## Vision Center Design
+
+Camera behavior is environment-aware:
+
+- **Localhost**: tries the backend YOLO MJPEG stream first.
+- **Previous Recording**: lets reviewers switch from live stream to bundled CCTV playback, use native controls, and jump backward or forward with overlays still visible.
+- **Vercel**: plays bundled real CCTV clips and draws privacy-safe person boxes, confidence labels, zone overlays, and detection status boxes in the browser.
+- **Render with full MP4s**: can stream backend recordings if `VIDEO_DIR` is configured.
+
+This design keeps the public demo reliable while still showing the local real-YOLO capability.
+
+## Product Differentiators
+
+- Privacy-first journey intelligence without face recognition.
+- POS-aware offline conversion analytics.
+- Staff exclusion built into the metric layer.
+- Re-entry protection to reduce inflated visitor counts.
+- Live operations recommendations, not only charts.
+- Deployment-safe camera evidence with local YOLO and cloud overlay modes.
+- Test-covered backend behavior across ingestion, metrics, funnel, anomalies, pipeline logic, and dashboard streaming.
+
+## Production Path
+
+For a production rollout:
+
+- move SQLite to PostgreSQL or TimescaleDB;
+- add Redis caching for hot metric reads;
+- run YOLO on edge hardware near the cameras;
+- push event batches to the API instead of raw video;
+- use persistent object storage for long-term camera evidence;
+- connect anomaly actions to workforce or alerting tools.
